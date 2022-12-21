@@ -13,9 +13,11 @@ Experimental template language for Bud. Very early stages.
 
 To fully support server-side rendering a reactive frontend language like Svelte, you'd need a Javascript interpreter on the server.
 
-Unfortunately there's not currently a single good solution for rendering JS in Go. Each solution has tradeoffs.
+Unfortunately there's not currently a single good solution for rendering JS in Go. Each solution has its own tradeoffs.
 
 Instead, I'd like to experiment with a server-side rendering algorithm that will skip over any unknown expressions on the server-side and let client-side hydration fill in any gaps.
+
+I'd like to start with Svelte support, but I'd like to eventually to eventually extend the template language to support concepts like utility-first CSS and Typescript out of the box.
 
 ## Development
 
