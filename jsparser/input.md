@@ -940,7 +940,7 @@ Hello &amp; World
 ```svelte
 <script>
 	let name = 'world';
-</script     
+</script
 
 
 
@@ -959,7 +959,7 @@ Hello &amp; World
 	div {
 		color: red;
 	}
-</style     
+</style
 
 
 
@@ -981,4 +981,3 @@ Hello &amp; World
 <h1>Hello <strong>{name}! </strong><span>How are you?</span></h1>
 
 ```
-

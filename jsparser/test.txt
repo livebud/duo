@@ -1,0 +1,119 @@
+action
+action-duplicate
+# action-with-call
+# action-with-identifier
+# action-with-literal
+# animation
+# attribute-class-directive
+attribute-containing-solidus
+# attribute-curly-bracket
+# attribute-dynamic
+# attribute-dynamic-boolean
+# attribute-empty
+# attribute-empty-error
+# attribute-escaped
+attribute-multiple
+# attribute-shorthand
+attribute-static
+attribute-static-boolean
+attribute-style
+# attribute-style-directive
+# attribute-style-directive-modifiers
+# attribute-style-directive-shorthand
+# attribute-style-directive-string
+# attribute-unique-binding-error
+# attribute-unique-error
+# attribute-unique-shorthand-error
+attribute-unquoted
+# attribute-with-whitespace
+# await-catch
+# await-then-catch
+# binding
+# binding-shorthand
+# comment
+# comment-with-ignores
+# component-dynamic
+# convert-entities
+# convert-entities-in-element
+# css
+# css-option-none
+# dynamic-element-string
+# dynamic-element-variable
+# dynamic-import
+# each-block
+# each-block-destructured
+# each-block-else
+# each-block-indexed
+# each-block-keyed
+element-with-attribute
+element-with-attribute-empty-string
+element-with-mustache
+element-with-text
+# elements
+# error-catch-before-closing
+# error-catch-without-await
+# error-comment-unclosed
+# error-css
+# error-css-global-without-selector
+# error-else-before-closing
+# error-else-before-closing-2
+# error-else-before-closing-3
+# error-else-if-before-closing
+# error-else-if-before-closing-2
+# error-else-if-without-if
+# error-empty-attribute-shorthand
+# error-empty-classname-binding
+# error-empty-directive-name
+# error-illegal-expression
+# error-multiple-styles
+# error-script-unclosed
+# error-script-unclosed-eof
+# error-self-reference
+# error-style-unclosed
+# error-style-unclosed-eof
+# error-svelte-selfdestructive
+# error-then-before-closing
+# error-then-without-await
+# error-unclosed-attribute-self-close-tag
+# error-unexpected-end-of-input
+# error-unexpected-end-of-input-b
+# error-unexpected-end-of-input-c
+# error-unexpected-end-of-input-d
+# error-unmatched-closing-tag
+# error-unmatched-closing-tag-autoclose
+# error-unmatched-closing-tag-autoclose-2
+# error-void-closing
+# error-window-children
+# error-window-duplicate
+# error-window-inside-block
+# error-window-inside-element
+# event-handler
+# if-block
+# if-block-else
+# if-block-elseif
+# implicitly-closed-li
+# implicitly-closed-li-block
+# nbsp
+# no-error-if-before-closing
+# raw-mustaches
+# raw-mustaches-whitespace-error
+# refs
+# script
+# script-comment-only
+# script-comment-trailing
+# script-comment-trailing-multiline
+# self-closing-element
+# self-reference
+# slotted-element
+space-between-mustaches
+# spread
+# style-inside-head
+# textarea-children
+# textarea-end-tag
+# transition-intro
+# transition-intro-no-params
+# unusual-identifier
+# whitespace-after-script-tag
+# whitespace-after-style-tag
+# whitespace-leading-trailing
+whitespace-normal

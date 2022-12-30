@@ -32,26 +32,57 @@ Text = data:[^{<]+ {
 
 MustacheTag = '{' expr:JSExpr '}' {
   return {
-    type:"MustacheTag",
+    type: "MustacheTag",
     expression: expr,
   }
 }
 
-Attribute = name:AttributeName _ '=' value:AttributeValue* {
+Attribute = BaseDirective / ValueAttribute / BooleanAttribute
+
+ValueAttribute = name:AttributeName _ '=' _ value:AttributeValue {
   return {
     type: "Attribute",
     name: name,
-    value: value,
+    value: [value],
   }
 }
 
-AttributeName = [a-z]+ {
+BooleanAttribute = name:AttributeName {
+  return {
+    type: "Attribute",
+    name: name,
+    value: true,
+  }
+}
+
+AttributeName = AttributeKey
+
+DirectiveType =  "use" { return 'Action' }
+  / "Animation" // TODO
+  / "Binding" // TODO
+  / "Class" // TODO
+  / "StyleDirective" // TODO
+  / "EventHandler" // TODO
+  / "Let" // TODO
+  / "Ref" // TODO
+  / "Transition" // TODO
+
+BaseDirective= type:DirectiveType ":" name:AttributeKey {
+  return {
+    expression: null,
+    modifiers: [],
+    type: type,
+    name: name,
+  }
+}
+
+AttributeKey = [a-z]+ {
   return text()
 }
 
-AttributeValue = AttributeText
+AttributeValue = AttributeQuoted / AttributeText
 
-AttributeText = ['"] text:[^'"]* ['"] {
+AttributeQuoted = ['"] text:[^'"]* ['"] {
   return {
     data: text.join(''),
     raw: text.join(''),
@@ -59,12 +90,31 @@ AttributeText = ['"] text:[^'"]* ['"] {
   }
 }
 
-Element = '<' _ tag:TagName list:(ws Attribute)* _ selfclosing:"/"? ">" children:TemplateNode* '</' TagName '>' {
+AttributeText = text:[^ >]+ {
+  return {
+    data: text.join(''),
+    raw: text.join(''),
+    type: "Text",
+  }
+}
+
+Element = BlockElement / SelfClosing
+
+BlockElement = '<' _ tag:TagName attrs:(ws Attribute)* _ ">" children:TemplateNode* '</' TagName '>' {
   return {
     type: tag.type,
     name: tag.name,
-    attributes: list.map(item => item[1]),
+    attributes: attrs.map(item => item[1]),
     children: children,
+  }
+}
+
+SelfClosing = '<' _ tag:TagName attrs:(ws Attribute)* _ "/"? ">" {
+  return {
+    type: tag.type,
+    name: tag.name,
+    attributes: attrs.map(item => item[1]),
+    children:[],
   }
 }
 

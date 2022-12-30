@@ -32,9 +32,11 @@ GREP="attribute-multiple" make test
 ## Current Plan
 
 - [x] Setup Svelte HTML parser in pegjs
-- [ ] Get the important Svelte parser tests passing (9/110 tests currently passing)
-- [ ] Translate the generated parser to Go
-- [ ] Render the parsed AST into HTML
+- [-] Get the important Svelte parser tests passing (15/119 tests currently passing) (`make test`)
+  - Pausing this approach for right now. This [tree-sitter grammar](https://github.com/Himujjal/tree-sitter-svelte/blob/master/grammar.js) should be helpful enough.
+- [ ] Write a Svelte lexer (`make lex`)
+- [ ] Write a Svelte parser
+- [ ] Interpret the parsed AST into HTML
 
 I plan on working on this here and there. Contributions very welcome!
 

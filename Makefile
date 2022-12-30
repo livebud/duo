@@ -1,4 +1,8 @@
-GREP ?=
+GREP ?= "($(shell cat jsparser/test.txt | sed '/^\#/d' | tr '\n' '|' | sed 's/|$$//'))$$"
+
+test.all:
+	@ ./node_modules/.bin/pegjs -o jsparser/jsparser.js jsparser/jsparser.pegjs
+	@ ./node_modules/.bin/mocha jsparser/test.js
 
 test:
 	@ ./node_modules/.bin/pegjs -o jsparser/jsparser.js jsparser/jsparser.pegjs
@@ -6,9 +10,11 @@ test:
 
 .PHONY: test test.partial
 
-# Adjust the test based on
-test.partial: GREP="attribute-multiple"
-test.partial: test
-
 test.watch:
-	@ watch --clear -- $(MAKE) test.partial
+	@ watch --clear -- $(MAKE) test
+
+lex:
+	go test ./internal/lexer
+
+lex.watch:
+	@ watch --clear -- $(MAKE) lex
