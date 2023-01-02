@@ -13,14 +13,15 @@ const (
 	GreaterThan      // >
 	LessThanSlash    // </
 	SlashGreaterThan // />
+	BackSlash        // \
 
 	LessThanExclamation // <!
 
 	Equal // =
 	Colon // :
+	Comma // ,
 
-	OpenComment  // <!--
-	CloseComment // -->
+	Comment // <!-- ... -->
 
 	Space // Any space character
 
@@ -30,54 +31,67 @@ const (
 	DashIdentifier  // Any identifier with a dash
 	DotIdentifier   // Any identifier with a period
 
-	Text // Text that is not a token
+	Text   // Raw text
+	Expr   // Raw expression to be parsed later
+	Script // Script to be parsed later
+	Style  // Style to be parsed later
 
 	OpenCurly  // {
 	CloseCurly // }
 
+	OpenParen  // (
+	CloseParen // )
+
+	OpenCurlyHash  // {#
+	OpenCurlyColon // {:
+	OpenCurlySlash // {/
+
 	Quote // " or '
+
 )
 
 var tokenToString = map[Type]string{
-	EndOfInput:          "EndOfInput",
-	Unexpected:          "Unexpected",
-	LessThan:            "LessThan",
-	LessThanSlash:       "LessThanSlash",
-	LessThanExclamation: "LessThanExclamation",
-	GreaterThan:         "GreaterThan",
-	SlashGreaterThan:    "SlashGreaterThan",
-	Equal:               "Equal",
-	Colon:               "Colon",
-	OpenComment:         "OpenComment",
-	CloseComment:        "CloseComment",
-	Space:               "Space",
-	Identifier:          "Identifier",
-	UpperIdentifier:     "UpperIdentifier",
-	ColonIdentifier:     "ColonIdentifier",
-	DashIdentifier:      "DashIdentifier",
-	DotIdentifier:       "DotIdentifier",
-	Text:                "Text",
-	OpenCurly:           "OpenCurly",
-	CloseCurly:          "CloseCurly",
-	Quote:               "Quote",
-}
-
-func New(t Type, literal string) Token {
-	return Token{
-		Type:    t,
-		Literal: literal,
-	}
+	EndOfInput:          "end_of_input",
+	Unexpected:          "unexpected",
+	LessThan:            "less_than",
+	LessThanSlash:       "less_than_slash",
+	LessThanExclamation: "less_than_exclamation",
+	GreaterThan:         "greater_than",
+	SlashGreaterThan:    "slash_greater_than",
+	BackSlash:           "back_slash",
+	Equal:               "equal",
+	Colon:               "colon",
+	Comma:               "comma",
+	Comment:             "comment",
+	Space:               "space",
+	Identifier:          "identifier",
+	UpperIdentifier:     "upper_identifier",
+	ColonIdentifier:     "colon_identifier",
+	DashIdentifier:      "dash_identifier",
+	DotIdentifier:       "dot_identifier",
+	Text:                "text",
+	Expr:                "expr",
+	Script:              "script",
+	Style:               "style",
+	OpenCurly:           "open_curly",
+	CloseCurly:          "close_curly",
+	OpenParen:           "open_paren",
+	CloseParen:          "close_paren",
+	OpenCurlyHash:       "open_curly_hash",
+	OpenCurlyColon:      "open_curly_colon",
+	OpenCurlySlash:      "open_curly_slash",
+	Quote:               "quote",
 }
 
 type Token struct {
-	Type    Type
-	Literal string
+	Type Type
+	Text string
 }
 
 func (t *Token) String() string {
 	s := tokenToString[t.Type]
-	if t.Literal != "" {
-		s += ":" + strconv.Quote(t.Literal)
+	if t.Text != "" {
+		s += ":" + strconv.Quote(t.Text)
 	}
 	return s
 }

@@ -1,15 +1,18 @@
 package lexer
 
 import (
+	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/livebud/duo/internal/token"
 )
 
-type stateFn func(l *Lexer) token.Token
+type state func(l *Lexer) token.Token
 
 func New(input string) *Lexer {
-	l := &Lexer{input: input, statesFns: []stateFn{initialState}}
+	l := &Lexer{input: input, states: []state{initialState}}
 	l.step()
 	return l
 }
@@ -38,319 +41,678 @@ func Print(input string) string {
 }
 
 type Lexer struct {
-	input        string
-	position     int  // current position in input (points to current char)
-	readPosition int  // current reading position in input (after current char)
-	ch           byte // current char under examination
-	statesFns    []stateFn
+	input  string
+	start  int  // Index to the start of the current token
+	end    int  // Index to the end of the current token
+	cp     rune // Code point being considered
+	next   int  // Index to the next rune to be considered
+	states []state
+
+	isScriptTag bool
+	isStyleTag  bool
 }
+
+// Use -1 to indicate the end of the file
+const eof = -1
 
 func (l *Lexer) step() {
-	if l.readPosition >= len(l.input) {
-		l.ch = 0
-	} else {
-		l.ch = l.input[l.readPosition]
+	codePoint, width := utf8.DecodeRuneInString(l.input[l.next:])
+	if width == 0 {
+		codePoint = eof
 	}
-	l.position = l.readPosition
-	l.readPosition += 1
+	l.cp = codePoint
+	l.end = l.next
+	l.next += width
 }
 
-func (l *Lexer) Next() token.Token {
-	return l.statesFns[len(l.statesFns)-1](l)
+func (l *Lexer) text() string {
+	return l.input[l.start:l.end]
 }
 
-func (l *Lexer) pushState(state func(l *Lexer) token.Token) {
-	l.statesFns = append(l.statesFns, state)
-}
-
-func (l *Lexer) popState() {
-	l.statesFns = l.statesFns[:len(l.statesFns)-1]
-}
-
-func isHeaderNumber(ch byte) bool {
-	return '1' <= ch && ch <= '7'
-}
-
-func (l *Lexer) readIdentifier() (token.Type, string) {
-	position := l.position
-	typ := token.Identifier
-	i := 0
-loop:
-	for l.ch != 0 {
-		switch {
-		case i == 0 && isUpper(l.ch):
-			typ = token.UpperIdentifier
-		case i > 0 && l.ch == '-':
-			typ = token.DashIdentifier
-		case i > 0 && l.ch == '.':
-			typ = token.DotIdentifier
-		case i > 0 && l.ch == ':':
-			typ = token.ColonIdentifier
-		case i == 1 && isHeaderNumber(l.ch):
-		case isLetter(l.ch):
-			// continue on
-		default:
-			break loop
+func (l *Lexer) match(valids ...string) bool {
+	if l.eof() {
+		return false
+	}
+	for _, valid := range valids {
+		if strings.HasPrefix(l.input[l.end:], valid) {
+			for range valid {
+				l.step()
+			}
+			return true
 		}
-		i++
-		l.step()
 	}
-	return typ, l.input[position:l.position]
+	return false
 }
 
-func (l *Lexer) peek() byte {
-	if l.readPosition >= len(l.input) {
-		return 0
-	}
-	return l.input[l.readPosition]
-}
-
-func (l *Lexer) readUntil(ends ...byte) string {
-	position := l.position
-loop:
-	for l.ch != 0 {
-		for _, end := range ends {
-			if l.ch == end {
-				break loop
+func (l *Lexer) stepUntil(delims ...string) {
+	for !l.eof() {
+		for _, delim := range delims {
+			if strings.HasPrefix(l.input[l.end:l.end+len(delim)], delim) {
+				return
 			}
 		}
 		l.step()
 	}
-	return l.input[position:l.position]
 }
 
-func (l *Lexer) readLessThan() token.Type {
-	switch ch := l.peek(); ch {
+func (l *Lexer) Next() (t token.Token) {
+	l.start = l.end
+	return l.states[len(l.states)-1](l)
+}
+
+func (l *Lexer) pushState(state func(l *Lexer) token.Token) {
+	l.states = append(l.states, state)
+}
+
+func (l *Lexer) popState() {
+	l.states = l.states[:len(l.states)-1]
+}
+
+func (l *Lexer) eof() bool {
+	return l.cp == eof
+}
+
+func (l *Lexer) lexSpace() (t token.Token) {
+	for !l.eof() && l.match(" ", "\t", "\n") {
+	}
+	t.Type = token.Space
+	return t
+}
+
+func initialState(l *Lexer) (t token.Token) {
+	switch l.cp {
+	case eof:
+		t.Type = token.EndOfInput
+		return t
+	case '<':
+		l.step()
+		switch {
+		case l.match("!--"):
+			l.stepUntil("-->")
+			if !l.match("-->") {
+				t.Type = token.Unexpected
+				return t
+			}
+			t.Type = token.Comment
+			t.Text = l.text()
+			return t
+		case l.match("/"):
+			t.Type = token.LessThanSlash
+			l.pushState(closeTagState)
+			return t
+		case l.match("!"):
+			t.Type = token.LessThanExclamation
+			l.pushState(tagState)
+			return t
+		default:
+			t.Type = token.LessThan
+			l.pushState(tagState)
+			return t
+		}
+	case '{':
+		l.step()
+		if l.match("#") {
+			t.Type = token.OpenCurlyHash
+			l.pushState(openBlockState)
+			return t
+		} else if l.match(":") {
+			t.Type = token.OpenCurlyColon
+			l.pushState(continueBlockState)
+			return t
+		} else if l.match("/") {
+			t.Type = token.OpenCurlySlash
+			l.pushState(closeBlockState)
+			return t
+		}
+		t.Type = token.OpenCurly
+		l.pushState(exprState)
+		return t
+	case ' ', '\t', '\n':
+		l.step()
+		return l.lexSpace()
 	default:
-		return token.LessThan
+		l.step()
+		l.stepUntil("<", "{")
+		t.Type = token.Text
+		t.Text = l.text()
+		return t
+	}
+}
+
+func (l *Lexer) lexTag() (t token.Token) {
+	if !unicode.IsLetter(l.cp) {
+		l.step()
+		t.Type = token.Unexpected
+		return t
+	}
+	t.Type = token.Identifier
+loop:
+	for i := 0; ; i++ {
+		switch {
+		// TODO: ensure components with dashes aren't possible
+		case i == 0 && unicode.IsUpper(l.cp):
+			l.step()
+			t.Type = token.UpperIdentifier
+		case i > 0 && l.cp == '-':
+			l.step()
+			t.Type = token.DashIdentifier
+		case i > 0 && l.cp == '.':
+			l.step()
+			t.Type = token.DotIdentifier
+		case i > 0 && l.cp == ':':
+			l.step()
+			t.Type = token.ColonIdentifier
+		case unicode.IsLetter(l.cp) || unicode.IsDigit(l.cp):
+			l.step()
+			// continue on
+		default:
+			break loop
+		}
+	}
+	t.Text = l.text()
+	return t
+}
+
+func tagState(l *Lexer) (t token.Token) {
+	switch l.cp {
+	case '>':
+		l.step()
+		l.popState()
+		if l.isScriptTag {
+			l.pushState(scriptState)
+			l.isScriptTag = false
+		} else if l.isStyleTag {
+			l.pushState(styleState)
+			l.isStyleTag = false
+		}
+		t.Type = token.GreaterThan
+		return t
 	case '/':
 		l.step()
-		return token.LessThanSlash
-	case '!':
-		l.step()
-		// Continue on
-	}
-	if ch := l.peek(); ch != '-' {
-		return token.LessThanExclamation
-	}
-	l.step()
-	if ch := l.peek(); ch != '-' {
-		return token.Text
-	}
-	l.step()
-	return token.OpenComment
-}
-
-func isUpper(ch byte) bool {
-	return 'A' <= ch && ch <= 'Z'
-}
-
-func isLetter(ch byte) bool {
-	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z'
-}
-
-func initialState(l *Lexer) token.Token {
-	var tok token.Token
-	switch l.ch {
-	case '<':
-		switch tok.Type = l.readLessThan(); tok.Type {
-		case token.LessThan, token.LessThanExclamation, token.LessThanSlash:
-			l.pushState(tagState)
-		case token.OpenComment:
-			l.pushState(commentState)
-		case token.Text:
-			// Continue on
-		default:
-			tok.Type = token.Unexpected
+		if l.match(">") {
+			l.popState()
+			t.Type = token.SlashGreaterThan
+			return t
 		}
-	case '{':
-		tok.Type = token.OpenCurly
-		l.pushState(expressionState)
-	case ' ', '\t', '\n':
-		l.readSpace()
-		tok.Type = token.Space
-		return tok
-	case 0:
-		tok.Type = token.EndOfInput
-	default:
-		tok.Type = token.Text
-		tok.Literal = l.readUntil('<', '{')
-		return tok
-	}
-	l.step()
-	return tok
-}
-
-func isSpace(ch byte) bool {
-	switch ch {
-	case ' ', '\t', '\n':
-		return true
-	default:
-		return false
-	}
-}
-
-func (l *Lexer) readSpace() {
-	for isSpace(l.ch) {
-		l.step()
-	}
-}
-
-func tagState(l *Lexer) token.Token {
-	var tok token.Token
-	switch l.ch {
-	case '>':
-		tok.Type = token.GreaterThan
-		l.popState()
+		t.Type = token.Unexpected
+		return t
 	case '=':
-		tok.Type = token.Equal
-
-		if l.peek() != '{' {
-			l.pushState(attributeValueState)
-		}
-	case ' ', '\t', '\n':
-		l.readSpace()
-		tok.Type = token.Space
-		return tok
-	case '{':
-		tok.Type = token.OpenCurly
-		l.pushState(expressionState)
-	default:
-		if isLetter(l.ch) {
-			tok.Type, tok.Literal = l.readIdentifier()
-			return tok
-		} else {
-			tok.Type = token.Unexpected
-			l.popState()
-		}
-	}
-	l.step()
-	return tok
-}
-
-func (l *Lexer) readCloseComment() token.Type {
-	l.step()
-	if l.ch != '-' {
-		return token.Text
-	}
-	l.step()
-	if l.ch != '>' {
-		return token.Text
-	}
-	l.step()
-	return token.CloseComment
-}
-
-func commentState(l *Lexer) token.Token {
-	var tok token.Token
-	switch l.ch {
-	case '-':
-		switch tok.Type = l.readCloseComment(); tok.Type {
-		case token.CloseComment:
-			l.popState()
-			return tok
-		case token.Text:
-			// Continue on
-		default:
-			tok.Type = token.Unexpected
-		}
-	default:
-		tok.Type = token.Text
-		tok.Literal = l.readUntil('-')
-		return tok
-	}
-	l.step()
-	return tok
-}
-
-func expressionState(l *Lexer) token.Token {
-	var tok token.Token
-	switch l.ch {
-	case '}':
-		l.popState()
-		tok.Type = token.CloseCurly
-	default:
-		tok.Type = token.Text
-		tok.Literal = l.readUntil('}')
-		return tok
-	}
-	l.step()
-	return tok
-}
-
-func isEndOfAttributeValue(ch byte) bool {
-	switch ch {
-	case ' ', '\t', '\n', '>', 0:
-		return true
-	default:
-		return false
-	}
-}
-
-func (l *Lexer) readAttributeValue() string {
-	position := l.position
-	for !isEndOfAttributeValue(l.ch) {
 		l.step()
+		t.Type = token.Equal
+		l.pushState(attributeValueState)
+		return t
+	case ' ', '\t', '\n':
+		l.step()
+		return l.lexSpace()
+	case '{':
+		l.step()
+		t.Type = token.OpenCurly
+		l.pushState(exprState)
+		return t
+	case eof:
+		t.Type = token.Unexpected
+		return t
+	default:
+		t = l.lexTag()
+		switch t.Text {
+		case "script":
+			l.isScriptTag = true
+			// case "style":
+			// 	l.isStyleTag = true
+		}
+		return t
 	}
-	return l.input[position:l.position]
 }
 
-func attributeValueState(l *Lexer) token.Token {
-	var tok token.Token
-	switch l.ch {
-	// case '{':
-	// 	tok.Type = token.OpenCurly
-	// 	l.pushState(expressionState)
+func closeTagState(l *Lexer) (t token.Token) {
+	switch l.cp {
+	case '>':
+		l.step()
+		l.popState()
+		t.Type = token.GreaterThan
+		return t
+	case ' ', '\t', '\n':
+		l.step()
+		return l.lexSpace()
+	case eof:
+		t.Type = token.Unexpected
+		return t
+	default:
+		return l.lexTag()
+	}
+}
+
+func scriptState(l *Lexer) (t token.Token) {
+	inString := false
+loop:
+	for {
+		switch l.cp {
+		case eof:
+			l.popState()
+			t.Type = token.Unexpected
+			return t
+		case '"':
+			l.step()
+			inString = !inString
+		case '<':
+			if !inString && strings.HasPrefix(l.input[l.end:], "</script>") {
+				break loop
+			}
+			l.step()
+		default:
+			l.step()
+		}
+	}
+	l.popState()
+	t.Type = token.Script
+	t.Text = l.text()
+	return t
+}
+
+func styleState(l *Lexer) (t token.Token) {
+loop:
+	for {
+		fmt.Println(l.cp)
+		switch l.cp {
+		case eof:
+			l.popState()
+			t.Type = token.Unexpected
+			return t
+		case '<':
+			if strings.HasPrefix(l.input[l.end:], "</style>") {
+				break loop
+			}
+			l.step()
+		default:
+			l.step()
+		}
+	}
+	fmt.Println("Here...")
+	l.popState()
+	t.Type = token.Style
+	t.Text = l.text()
+	return t
+}
+
+func exprState(l *Lexer) (t token.Token) {
+	switch l.cp {
+	case '}':
+		l.step()
+		l.popState()
+		t.Type = token.CloseCurly
+		return t
+	case eof:
+		t.Type = token.Unexpected
+		return t
+	default:
+		depth := 0
+	loop:
+		for {
+			switch l.cp {
+			case '{':
+				depth++
+			case '}':
+				if depth == 0 {
+					break loop
+				}
+				depth--
+			}
+			l.step()
+		}
+		t.Type = token.Expr
+		t.Text = l.text()
+		return t
+	}
+}
+
+// func isEndOfAttributeValue(ch byte) bool {
+// 	switch ch {
+// 	case ' ', '\t', '\n', '>', 0:
+// 		return true
+// 	default:
+// 		return false
+// 	}
+// }
+
+// func (l *Lexer) readAttributeValue() string {
+// 	position := l.position
+// 	for !isEndOfAttributeValue(l.ch) {
+// 		l.step()
+// 	}
+// 	return l.input[position:l.position]
+// }
+
+func attributeValueState(l *Lexer) (t token.Token) {
+	switch l.cp {
+	case '{':
+		l.step()
+		t.Type = token.OpenCurly
+		l.popState()
+		l.pushState(exprState)
+		return t
 	case '"':
-		tok.Type = token.Quote
+		l.step()
 		l.popState()
 		l.pushState(doubleQuoteState)
+		t.Type = token.Quote
+		return t
 	case '\'':
-		tok.Type = token.Quote
+		l.step()
 		l.popState()
 		l.pushState(singleQuoteState)
+		t.Type = token.Quote
+		return t
+	case ' ', '\t', '\n':
+		l.step()
+		return l.lexSpace()
+	case eof:
+		t.Type = token.Unexpected
+		return t
 	default:
-		tok.Type = token.Text
-		tok.Literal = l.readAttributeValue()
+		l.stepUntil(" ", "\t", "\n", ">")
 		l.popState()
-		return tok
+		t.Type = token.Text
+		t.Text = l.text()
+		return t
 	}
-	l.step()
-	return tok
 }
 
-func doubleQuoteState(l *Lexer) token.Token {
-	var tok token.Token
-	switch {
-	case l.ch == '"':
-		tok.Type = token.Quote
+func doubleQuoteState(l *Lexer) (t token.Token) {
+	switch l.cp {
+	case '"':
+		l.step()
 		l.popState()
-	case l.ch == '{':
-		tok.Type = token.OpenCurly
-		l.pushState(expressionState)
+		t.Type = token.Quote
+		return t
+	case '{':
+		l.step()
+		l.pushState(exprState)
+		t.Type = token.OpenCurly
+		return t
+	case '\\':
+		l.step()
+		t.Type = token.BackSlash
+		return t
+	case eof:
+		t.Type = token.Unexpected
+		return t
 	default:
-		tok.Type = token.Text
-		tok.Literal = l.readUntil('"', '{')
-		return tok
+		l.stepUntil("\"", "{")
+		t.Type = token.Text
+		t.Text = l.text()
+		return t
 	}
-	l.step()
-	return tok
 }
 
-func singleQuoteState(l *Lexer) token.Token {
-	var tok token.Token
-	switch {
-	case l.ch == '\'':
-		tok.Type = token.Quote
+func singleQuoteState(l *Lexer) (t token.Token) {
+	switch l.cp {
+
+	case '\'':
+		l.step()
 		l.popState()
-	case l.ch == '{':
-		tok.Type = token.OpenCurly
-		l.pushState(expressionState)
+		t.Type = token.Quote
+		return t
+	case '{':
+		l.step()
+		l.pushState(exprState)
+		t.Type = token.OpenCurly
+		return t
+	case '\\':
+		l.step()
+		t.Type = token.BackSlash
+		return t
+	case eof:
+		t.Type = token.Unexpected
+		return t
 	default:
-		tok.Type = token.Text
-		tok.Literal = l.readUntil('\'', '{')
-		return tok
+		l.stepUntil("'", "{")
+		t.Type = token.Text
+		t.Text = l.text()
+		return t
 	}
-	l.step()
-	return tok
 }
+
+func openBlockState(l *Lexer) (t token.Token) {
+	switch {
+	case l.match("if "):
+		l.popState()
+		l.pushState(exprState)
+		t.Type = token.Identifier
+		t.Text = "if"
+		return t
+	case l.match("each "):
+		l.popState()
+		l.pushState(eachState)
+		l.pushState(eachExprState)
+		t.Type = token.Identifier
+		t.Text = "each"
+		return t
+	case l.match("await "):
+		l.popState()
+		l.pushState(exprState)
+		t.Type = token.Identifier
+		t.Text = "await"
+		return t
+	default:
+		l.step()
+		l.popState()
+		t.Type = token.Unexpected
+		return t
+	}
+}
+
+func closeBlockState(l *Lexer) (t token.Token) {
+	switch {
+	case l.match("if", "each", "await"):
+		t.Type = token.Identifier
+		t.Text = l.text()
+		return t
+	case l.cp == '}':
+		l.step()
+		l.popState()
+		t.Type = token.CloseCurly
+		return t
+	default:
+		l.step()
+		l.popState()
+		t.Type = token.Unexpected
+		return t
+	}
+}
+
+func continueBlockState(l *Lexer) (t token.Token) {
+	switch {
+	case l.match("else if "):
+		l.popState()
+		l.pushState(exprState)
+		t.Type = token.Identifier
+		t.Text = "else if"
+		return t
+	case l.match("else"):
+		l.popState()
+		l.pushState(exprState)
+		t.Type = token.Identifier
+		t.Text = "else"
+		return t
+	case l.match("then"):
+		l.match(" ") // Optionally match a space after then
+		l.popState()
+		l.pushState(exprState)
+		t.Type = token.Identifier
+		t.Text = "then"
+		return t
+	case l.match("catch"):
+		l.match(" ") // Optionally match a space after catch
+		l.popState()
+		l.pushState(exprState)
+		t.Type = token.Identifier
+		t.Text = "catch"
+		return t
+	default:
+		l.step()
+		l.popState()
+		t.Type = token.Unexpected
+		return t
+	}
+}
+
+func eachExprState(l *Lexer) (t token.Token) {
+	switch l.cp {
+	case ' ':
+		l.step()
+		l.popState()
+		t.Type = token.Space
+		return t
+	case eof:
+		l.popState()
+		t.Type = token.Unexpected
+		return t
+	default:
+		l.stepUntil(" ")
+		t.Type = token.Expr
+		t.Text = l.text()
+		return t
+	}
+}
+
+func (l *Lexer) lexVariable() (t token.Token) {
+	t.Type = token.Identifier
+	for !l.eof() && (unicode.IsLetter(l.cp) || unicode.IsDigit(l.cp) || l.cp == '_') {
+		l.step()
+	}
+	t.Text = l.text()
+	return t
+}
+
+func eachState(l *Lexer) (t token.Token) {
+	switch {
+	case l.match(" as "):
+		t.Type = token.Identifier
+		t.Text = "as"
+		return t
+	case l.cp == ' ':
+		l.step()
+		return l.lexSpace()
+	case l.cp == eof:
+		l.popState()
+		t.Type = token.Unexpected
+		return t
+	case l.cp == '}':
+		l.step()
+		l.popState()
+		t.Type = token.CloseCurly
+		return t
+	case unicode.IsLetter(l.cp):
+		l.step()
+		return l.lexVariable()
+	case l.cp == ',':
+		l.step()
+		l.lexSpace()
+		t.Type = token.Comma
+		return t
+	case l.cp == '(':
+		l.step()
+		l.pushState(eachKeyState)
+		t.Type = token.OpenParen
+		return t
+	default:
+		l.step()
+		l.popState()
+		t.Type = token.Unexpected
+		return t
+	}
+}
+
+func eachKeyState(l *Lexer) (t token.Token) {
+	switch l.cp {
+	case ')':
+		l.step()
+		l.popState()
+		t.Type = token.CloseParen
+		return t
+	case eof:
+		l.popState()
+		t.Type = token.Unexpected
+		return t
+	default:
+		l.stepUntil(")")
+		t.Type = token.Expr
+		t.Text = l.text()
+		return t
+	}
+}
+
+// func (l *Lexer) lexEachExpr() (t token.Token) {
+// 	if !unicode.IsLetter(l.cp) {
+// 		l.step()
+// 		t.Type = token.Unexpected
+// 		return t
+// 	}
+// 	l.step()
+// loop:
+// 	for i := 0; l.cp != eof; i++ {
+// 		switch {
+// 		case l.cp == ' ':
+// 			break loop
+// 		case unicode.IsLetter(l.cp) || unicode.IsDigit(l.cp) || l.cp == '.' || l.cp == '_':
+// 		}
+// 	}
+
+// 	// Match the variable name up until the next space
+// 	for i := 0; ; i++ {
+// 		switch {
+// 		case i == 0 && unicode.IsLetter(l.cp):
+
+// 		case i > 0 && l.cp == ' ':
+// 			l.step()
+// 			l.popState()
+// 			l.pushState(eachAsState)
+// 			t.Type = token.Space
+// 			return t
+// 		case l.cp == eof:
+// 			t.Type = token.Unexpected
+// 			return t
+// 		default:
+// 			l.step()
+// 		}
+// 	}
+// }
+
+// func (l *Lexer) lexQuote(expected rune) (t token.Token) {
+// 	escaped := false
+// 	for !l.eof() {
+// 		switch l.cp {
+// 		// Handle escaped quotes
+// 		case '{':
+// 			l.step()
+// 			l.pushState(exprState)
+// 			t.Type = token.OpenCurly
+// 			return t
+// 		case '\\':
+// 			l.step()
+// 			escaped = true
+// 			continue
+// 		case expected:
+// 			l.step()
+// 			if escaped {
+// 				escaped = false
+// 				continue
+// 			}
+// 			t.Type = token.Text
+// 			t.Text = l.text()
+// 			return t
+// 		default:
+// 			escaped = false
+// 			l.step()
+// 		}
+// 	}
+// 	t.Type = token.Unexpected
+// 	return t
+// }
+
+// func (l *Lexer) lexBareAttributeValue() (t token.Token) {
+// 	t.Type = token.Text
+// 	l.stepUntil(" ", "\t", "\n", ">", "}")
+// 	t.Text = l.text()
+// 	return t
+// }
