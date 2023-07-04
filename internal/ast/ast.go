@@ -131,20 +131,6 @@ func (e *Script) print(indent string) string {
 	return out.String()
 }
 
-// type Component struct {
-// 	Name       string
-// 	Attributes []Attribute
-// 	Children   []Fragment
-// }
-
-// func (c *Component) fragment() {}
-
-// func (c *Component) Type() string { return "Component" }
-
-// func (c *Component) print(indent string) string {
-// 	return ""
-// }
-
 type Attribute interface {
 	Node
 	attribute()
