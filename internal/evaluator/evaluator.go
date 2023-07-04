@@ -2,8 +2,8 @@ package evaluator
 
 import (
 	"fmt"
+	"io"
 	"reflect"
-	"strings"
 
 	"github.com/livebud/duo/internal/ast"
 	"github.com/tdewolff/parse/v2/js"
@@ -17,20 +17,34 @@ type Evaluator struct {
 	doc *ast.Document
 }
 
-func (e *Evaluator) Evaluate(v interface{}) (string, error) {
+func (e *Evaluator) Evaluate(w io.Writer, v interface{}) error {
 	value := reflect.ValueOf(v)
-	str := new(strings.Builder)
-	evaluator := &evaluator{
-		Builder: str,
-	}
+	evaluator := &evaluator{&writer{w}}
 	if err := evaluator.evaluateDocument(value, e.doc); err != nil {
-		return "", err
+		return err
 	}
-	return strings.TrimSpace(str.String()), nil
+	return nil
 }
 
 type evaluator struct {
-	*strings.Builder
+	*writer
+}
+
+type writer struct {
+	io.Writer
+}
+
+func (w *writer) WriteRune(r rune) (int, error) {
+	return w.Writer.Write([]byte(string(r)))
+}
+
+func (w *writer) WriteString(s string) (int, error) {
+	return w.Writer.Write([]byte(s))
+}
+
+func (w *writer) WriteByte(b byte) error {
+	_, err := w.Writer.Write([]byte{b})
+	return err
 }
 
 func (e *evaluator) evaluateDocument(scope reflect.Value, node *ast.Document) error {

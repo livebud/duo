@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/livebud/duo/internal/evaluator"
@@ -23,9 +24,13 @@ func equal(t *testing.T, name, input string, props interface{}, expected string)
 			t.Fatal(err)
 		}
 		evaluator := evaluator.New(doc)
-		actual, err := evaluator.Evaluate(props)
-		if err != nil {
+		str := new(strings.Builder)
+		actual := ""
+		if err := evaluator.Evaluate(str, props); err != nil {
 			actual = err.Error()
+		} else {
+			// TODO: remove this, this should happen earlier
+			actual = strings.TrimSpace(str.String())
 		}
 		if actual == expected {
 			return
