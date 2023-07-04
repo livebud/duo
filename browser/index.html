@@ -1,0 +1,16 @@
+<html>
+  <head></head>
+  <body>
+    <main>
+      <h1>hello</h1>
+      <script type="duo/json">{"greeting":"hello"}</script>
+    </main>
+    <script type="module">
+      import { render } from './duo.js'
+      import Component from './index.js'
+      const main = document.querySelector('main')
+      const state = JSON.parse(document.querySelector('script[type="duo/json"]').textContent) || {}
+      render(Component, main, state)
+    </script>
+  </body>
+</html>

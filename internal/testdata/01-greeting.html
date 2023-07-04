@@ -1,0 +1,46 @@
+<html>
+  <head></head>
+  <body>
+    <main>
+      <h1>hello</h1>
+      <p>cool</p>
+    </main>
+    <script type="module">
+      import { render } from '../../browser/index.js'
+      console.log(render)
+      // import { render, h, hydrate } from 'https://cdn.jsdelivr.net/npm/preact@10.15.1/+esm'
+      // import proxy from 'https://esm.run/internal/proxy'
+
+      // export default function Component(__env__) { __env__.greeting = __env__.greeting || "hello"; setInterval(() => { __env__.greeting += "z"; }, 500); return (__props__) => { return h("h1", {}, [__props__.greeting]); }; };
+      // export default function Component(__env__) { __env__.greeting = __env__.greeting || "hello"; setInterval(() => { __env__.greeting += "z"; }, 500); return (__props__) => { return h("h1", {}, [__props__.greeting]); }; };
+
+      // function main() {
+      //   const main = document.querySelector('main')
+      //   const props = proxy({})
+      //   const component = Component(props)
+      //   hydrate(h(component, props, []), main)
+      //   window.requestAnimationFrame(() => {
+      //     props.subscribe(() => {
+      //       console.log("changed!")
+      //       render(h(component, props, []), main)
+      //     })
+      //   })
+      // }
+
+      // main()
+    </script>
+  </body>
+  <!--
+    <script>
+      let greeting = "hi"
+      setInterval(() => {
+        greeting += "o"
+      }, 1000)
+      function clear() {
+        greeting = 'hi'
+      }
+    </script>
+
+    <h1 on:click{clear}>{greeting}</h1>
+   -->
+</html>

@@ -1,0 +1,1 @@
+export default function (__h__, __proxy__) { __proxy__.greeting = __proxy__.greeting || "hello"; setInterval(() => { __proxy__.greeting += "o"; }, 500); return (__props__) => { return __h__("h1", {}, [__props__.greeting]); }; };
