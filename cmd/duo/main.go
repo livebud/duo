@@ -129,8 +129,9 @@ const htmlPage = `<!doctype html>
 	<meta charset="utf-8">
 </head>
 <body>
-	%s
-	%s
+	<main>
+		%s
+	</main>
 </body>
 </html>
 `
@@ -156,7 +157,7 @@ func removeExt(path string) string {
 
 func (s *Serve) serveError(fi fs.FileInfo, err error) (fs.File, error) {
 	pre := fmt.Sprintf(`<pre>%s</pre>`, err.Error())
-	html := []byte(fmt.Sprintf(htmlPage, liveReloadScript, pre))
+	html := []byte(fmt.Sprintf(htmlPage, pre+"\n"+liveReloadScript))
 	// Create a buffered file
 	bf := &virtual.File{
 		Path:    "error",
@@ -167,8 +168,66 @@ func (s *Serve) serveError(fi fs.FileInfo, err error) (fs.File, error) {
 	return bf.Open(), nil
 }
 
+var clientCode = `
+<script type="module">
+	import { render as preactRender, h, hydrate } from 'https://cdn.jsdelivr.net/npm/preact@10.15.1/+esm'
+	import Proxy from 'https://esm.run/internal/proxy'
+	import Component from %q
+
+	export function render(Component, target, props = {}) {
+		const proxy = Proxy(props)
+		const component = Component(h, proxy)
+		hydrate(h(component, proxy, []), target)
+		window.requestAnimationFrame(() => {
+			props.subscribe(() => {
+				preactRender(h(component, props, []), target)
+			})
+		})
+	}
+
+	render(Component, document.querySelector('main'))
+</script>
+`
+
+func (s *Serve) openClient(name string) (fs.File, error) {
+	f, err := openFile(
+		filepath.Join(s.Dir, removeExt(name)+".svelte"),
+		filepath.Join(s.Dir, removeExt(name)+".html"),
+		filepath.Join(s.Dir, removeExt(name)+".duo"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error opening %s: %w", name, err)
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("error stating %s: %w", name, err)
+	}
+	// If we detect HTML, inject the live reload script
+	code, err := io.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+	jsCode, err := duo.Generate(name, code)
+	if err != nil {
+		return nil, fmt.Errorf("error generating %s: %w", name, err)
+	}
+	// Close the existing file because we don't need it anymore
+	if f.Close(); err != nil {
+		return nil, err
+	}
+	bf := &virtual.File{
+		Path:    name,
+		Data:    []byte(jsCode),
+		Mode:    fi.Mode(),
+		ModTime: fi.ModTime(),
+	}
+	return bf.Open(), nil
+}
+
 func (s *Serve) Open(name string) (fs.File, error) {
-	if !isView(name) {
+	if filepath.Ext(name) == ".js" {
+		return s.openClient(name)
+	} else if !isView(name) {
 		return os.Open(filepath.Join(s.Dir, name))
 	}
 	var f *os.File
@@ -193,11 +252,11 @@ func (s *Serve) Open(name string) (fs.File, error) {
 	}
 	defer f.Close()
 	// If we detect HTML, inject the live reload script
-	view, err := io.ReadAll(f)
+	code, err := io.ReadAll(f)
 	if err != nil {
 		return nil, err
 	}
-	template, err := duo.Parse(name, view)
+	template, err := duo.Parse(name, code)
 	if err != nil {
 		return s.serveError(fi, fmt.Errorf("error parsing %s: %w", name, err))
 	}
@@ -215,8 +274,11 @@ func (s *Serve) Open(name string) (fs.File, error) {
 	// Inject the live reload script
 	if bytes.Contains(html, []byte(`<html>`)) {
 		html = append(html, []byte(liveReloadScript)...)
+		html = append(html, []byte(fmt.Sprintf(clientCode, "./"+removeExt(name)+".js"))...)
 	} else {
-		html = []byte(fmt.Sprintf(htmlPage, liveReloadScript, string(html)))
+		client := fmt.Sprintf(clientCode, "./"+removeExt(name)+".js")
+		body := fmt.Sprintf("%s\n%s\n%s", string(html), liveReloadScript, client)
+		html = []byte(fmt.Sprintf(htmlPage, body))
 	}
 	// Create a buffered file
 	bf := &virtual.File{

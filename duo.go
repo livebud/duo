@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/livebud/duo/internal/ast"
+	"github.com/livebud/duo/internal/dom"
 	"github.com/livebud/duo/internal/evaluator"
 	"github.com/livebud/duo/internal/parser"
 )
@@ -29,6 +30,14 @@ func Parse(path string, code []byte) (*Template, error) {
 	}
 	evaluator := evaluator.New(doc)
 	return &Template{doc, evaluator}, nil
+}
+
+func Generate(path string, code []byte) (string, error) {
+	doc, err := parser.Parse(string(code))
+	if err != nil {
+		return "", err
+	}
+	return dom.Generate(doc)
 }
 
 func parse(path string, readFile func(path string) ([]byte, error)) (*Template, error) {
