@@ -1,0 +1,1 @@
+export default function (__h__, __proxy__) { return (__props__) => { return __h__("div", {}, ["\n  ", __h__("hr", {name: __props__.name}, []), "\n  ", __h__("hr", {name: __props__.name}, []), "\n  ", __h__("hr", {name: __props__.name}, []), "\n  ", __h__("hr", {name: __props__.target + "-" + __props__.name}, []), "\n"]); }; };
