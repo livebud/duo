@@ -19,8 +19,9 @@ func equal(t *testing.T, name, input, expected string) {
 	t.Run(name, func(t *testing.T) {
 		t.Helper()
 		actual := parser.Print(input)
-		actual = strings.ReplaceAll(actual, "\n", "")
+		actual = strings.ReplaceAll(actual, "  ", "")
 		actual = strings.ReplaceAll(actual, "\t", "")
+		actual = strings.ReplaceAll(actual, "\n", "")
 		if actual == expected {
 			return
 		}
@@ -53,10 +54,23 @@ func equalFile(t *testing.T, name, expected string) {
 func Test(t *testing.T) {
 	equal(t, "simple", "<h1>hi</h1>", `<h1>hi</h1>`)
 	equal(t, "expr", "<h1>{greeting}</h1>", `<h1>{greeting}</h1>`)
-	equal(t, "expr", "<hr/>", `<hr />`)
-	equal(t, "expr", "<hr   />", `<hr />`)
+	equal(t, "self-closing", "<hr/>", `<hr />`)
+	equal(t, "self-closing with space", "<hr   />", `<hr />`)
+	equal(t, "attribute", `<h1 class="hello">{greeting}</h1>`, `<h1 class="hello">{greeting}</h1>`)
+	equal(t, "attributes", `<h1 class="hello" id="cool">{greeting}</h1>`, `<h1 class="hello" id="cool">{greeting}</h1>`)
+	equal(t, "attribute", `<hr class="hello"/>`, `<hr class="hello" />`)
+	equal(t, "attribute", `<hr class="hello"   />`, `<hr class="hello" />`)
+	equal(t, "attributes", `<hr data-set={set} />`, `<hr data-set="{set}" />`)
+	equal(t, "attributes", `<hr class={name} />`, `<hr class="{name}" />`)
+	equal(t, "attributes", `<hr class={name}/>`, `<hr class="{name}" />`)
+	equal(t, "attributes", `<h1 name={greeting}>{greeting}</h1>`, `<h1 name="{greeting}">{greeting}</h1>`)
+	equal(t, "attributes", `<hr class="hi-{name}-world" />`, `<hr class="hi-{name}-world" />`)
+	equal(t, "attributes", `<hr class="a{b}c{d}" />`, `<hr class="a{b}c{d}" />`)
+	equal(t, "attributes", `<hr {id} />`, `<hr {id} />`)
+	equal(t, "attributes", `<h1 name="">{greeting}</h1>`, `<h1 name="">{greeting}</h1>`)
 }
 
 func TestFile(t *testing.T) {
-	equalFile(t, "01-greeting.svelte", `<script>export let greeting = "hello"; setInterval(() => { greeting += "o"; }, 500); </script><h1>{greeting}</h1>`)
+	equalFile(t, "01-greeting.html", `<script>export let greeting = "hello"; setInterval(() => { greeting += "o"; }, 500); </script><h1>{greeting}</h1>`)
+	equalFile(t, "02-attribute.html", `<div><hr {name} /><hr name="{name}" /><hr name="{name}" /><hr name="{target}-{name}" /></div>`)
 }

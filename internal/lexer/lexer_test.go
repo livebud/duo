@@ -94,6 +94,12 @@ func TestExpression(t *testing.T) {
 	equal(t, "expression", "<h1>{greeting && </h1>}</h1>", `< identifier:"h1" > { expr:"greeting && </h1>" } </ identifier:"h1" >`)
 	equal(t, "expression", "<h1>hello {planet}!</h1>", `< identifier:"h1" > text:"hello " { expr:"planet" } text:"!" </ identifier:"h1" >`)
 	equal(t, "expression", "<h1>{greeting && \"</h1>\"}</h1>", `< identifier:"h1" > { expr:"greeting && \"</h1>\"" } </ identifier:"h1" >`)
+	equal(t, "attribute expression", "<hr class={name} />", `< identifier:"hr" space:" " identifier:"class" = { expr:"name" } space:" " />`)
+	equal(t, "attribute expression", "<hr class={name}/>", `< identifier:"hr" space:" " identifier:"class" = { expr:"name" } />`)
+	equal(t, "attribute expression", `<hr class="hi-{name}"/>`, `< identifier:"hr" space:" " identifier:"class" = quote:"\"" text:"hi-" { expr:"name" } quote:"\"" />`)
+	equal(t, "attribute expression", `<hr class="hi-{name}-world"/>`, `< identifier:"hr" space:" " identifier:"class" = quote:"\"" text:"hi-" { expr:"name" } text:"-world" quote:"\"" />`)
+	equal(t, "attribute expression", "<hr {class} />", `< identifier:"hr" space:" " { expr:"class" } space:" " />`)
+	equal(t, "attribute expression", "<hr data-set={set} />", `< identifier:"hr" space:" " identifier:"data-set" = { expr:"set" } space:" " />`)
 }
 
 func TestDoctype(t *testing.T) {

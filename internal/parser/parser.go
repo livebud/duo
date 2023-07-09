@@ -99,7 +99,32 @@ openTag:
 			return node, nil
 		case token.GreaterThan:
 			break openTag
-		// TODO: handle attributes
+		case token.Identifier:
+			attr, err := p.parseAttribute()
+			if err != nil {
+				return nil, err
+			}
+			node.Attributes = append(node.Attributes, attr)
+			// End of tag
+			if p.l.Token.Type == token.GreaterThan {
+				break openTag
+			} else if p.l.Token.Type == token.SlashGreaterThan {
+				node.SelfClosing = true
+				return node, nil
+			}
+		case token.LeftBrace:
+			attr, err := p.parseAttributeShorthand()
+			if err != nil {
+				return nil, err
+			}
+			node.Attributes = append(node.Attributes, attr)
+			// End of tag
+			if p.l.Token.Type == token.GreaterThan {
+				break openTag
+			} else if p.l.Token.Type == token.SlashGreaterThan {
+				node.SelfClosing = true
+				return node, nil
+			}
 		default:
 			return nil, p.unexpected()
 		}
@@ -115,7 +140,6 @@ openTag:
 
 	}
 
-	// Closing tag
 	if p.l.Token.Type != token.LessThanSlash {
 		return nil, p.unexpected()
 	}
@@ -138,6 +162,78 @@ openTag:
 	return node, nil
 }
 
+func (p *Parser) parseAttribute() (ast.Attribute, error) {
+	field := new(ast.Field)
+	key := p.l.Token.Text
+	field.Key = key
+	for p.l.Next() {
+		switch p.l.Token.Type {
+		case token.Space, token.SlashGreaterThan, token.GreaterThan:
+			return field, nil
+		case token.Equal:
+			values, err := p.parseAttributeValues()
+			if err != nil {
+				return nil, err
+			}
+			field.Values = values
+			// End of tag
+			switch p.l.Token.Type {
+			case token.Space, token.SlashGreaterThan, token.GreaterThan:
+				return field, nil
+			}
+		default:
+			return nil, p.unexpected()
+		}
+	}
+	return field, nil
+}
+
+func (p *Parser) parseAttributeValues() (values []ast.Value, err error) {
+	for p.l.Next() {
+		switch p.l.Token.Type {
+		case token.Space, token.SlashGreaterThan, token.GreaterThan:
+			return values, nil
+		case token.Quote:
+			return p.parseAttributeStringValues()
+		case token.Text:
+			values = append(values, &ast.Text{
+				Value: p.l.Token.Text,
+			})
+		case token.LeftBrace:
+			mustache, err := p.parseMustache()
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, mustache)
+		default:
+			return nil, p.unexpected()
+		}
+	}
+	return values, nil
+}
+
+func (p *Parser) parseAttributeStringValues() (values []ast.Value, err error) {
+	for p.l.Next() {
+		switch p.l.Token.Type {
+		case token.Quote:
+			return values, nil
+		case token.Text:
+			values = append(values, &ast.Text{
+				Value: p.l.Token.Text,
+			})
+		case token.LeftBrace:
+			mustache, err := p.parseMustache()
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, mustache)
+		default:
+			return nil, p.unexpected()
+		}
+	}
+	return values, nil
+}
+
 func (p *Parser) parseMustache() (*ast.Mustache, error) {
 	node := new(ast.Mustache)
 	p.l.Next()
@@ -149,6 +245,29 @@ func (p *Parser) parseMustache() (*ast.Mustache, error) {
 		return nil, err
 	}
 	node.Expr = expr
+	p.l.Next()
+	if p.l.Token.Type != token.RightBrace {
+		return nil, p.unexpected()
+	}
+	return node, nil
+}
+
+func (p *Parser) parseAttributeShorthand() (ast.Attribute, error) {
+	node := new(ast.AttributeShorthand)
+	p.l.Next()
+	if p.l.Token.Type != token.Expr {
+		return nil, p.unexpected()
+	}
+	expr, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+	ident, ok := expr.(*js.Var)
+	if !ok {
+		return nil, fmt.Errorf("expected and identifier, got %T", expr)
+	}
+	name := string(ident.Data)
+	node.Key = name
 	p.l.Next()
 	if p.l.Token.Type != token.RightBrace {
 		return nil, p.unexpected()

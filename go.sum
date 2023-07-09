@@ -17,6 +17,7 @@ github.com/livebud/watcher v0.0.2 h1:VPcEAnO/gH+D7TYHVs2m6kzpu+wJo/cRQb0kJoaiF+4
 github.com/livebud/watcher v0.0.2/go.mod h1:FZT6BCQso+WrBTRNvaCpfat63BSOgwltn1uo8Jl+f4s=
 github.com/matryer/is v1.4.0/go.mod h1:8I/i5uYgLzgsgEloJE1U6xx5HkBQpAZvepWuujKwMRU=
 github.com/matryer/is v1.4.1 h1:55ehd8zaGABKLXQUe2awZ99BD/PTc2ls+KV/dXphgEQ=
+github.com/matryer/is v1.4.1/go.mod h1:8I/i5uYgLzgsgEloJE1U6xx5HkBQpAZvepWuujKwMRU=
 github.com/matthewmueller/diff v0.0.0-20220110044814-1b370be97fd0 h1:BRioOxrI5mKTf+dNwsJXK5/oTh5GAW5pXzH+ddZV0Mc=
 github.com/matthewmueller/diff v0.0.0-20220110044814-1b370be97fd0/go.mod h1:49nm/c//NcBZOPN0KAH+8NrNpyNCk73hdYJvRQAk3uU=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

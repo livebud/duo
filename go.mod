@@ -5,6 +5,7 @@ go 1.20
 require (
 	github.com/livebud/cli v0.0.1
 	github.com/livebud/watcher v0.0.2
+	github.com/matryer/is v1.4.1
 	github.com/matthewmueller/diff v0.0.0-20220110044814-1b370be97fd0
 	github.com/tdewolff/parse/v2 v2.6.6
 	golang.org/x/sync v0.3.0

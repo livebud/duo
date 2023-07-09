@@ -51,7 +51,7 @@ func equalFile(t *testing.T, name string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected, err := os.ReadFile(filepath.Join("..", "testdata", replaceExt(name, ".js")))
+	expected, err := os.ReadFile(filepath.Join("..", "testdata", replaceExt(name, ".js.txt")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,5 +63,6 @@ func replaceExt(path, ext string) string {
 }
 
 func TestFile(t *testing.T) {
-	equalFile(t, "01-greeting.svelte")
+	equalFile(t, "01-greeting.html")
+	equalFile(t, "02-attribute.html")
 }

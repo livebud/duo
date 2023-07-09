@@ -227,7 +227,7 @@ func startOpenTagState(l *Lexer) token.Type {
 		return l.unexpected()
 	case isAlpha(l.cp):
 		l.step()
-		for isAlphaNumeric(l.cp) {
+		for isAlphaNumeric(l.cp) || isDash(l.cp) {
 			l.step()
 		}
 		l.popState()
@@ -260,7 +260,7 @@ func middleTagState(l *Lexer) (t token.Type) {
 		return l.unexpected()
 	case isAlpha(l.cp):
 		l.step()
-		for isAlphaNumeric(l.cp) {
+		for isAlphaNumeric(l.cp) || isDash(l.cp) {
 			l.step()
 		}
 		return token.Identifier
@@ -290,6 +290,10 @@ func middleTagState(l *Lexer) (t token.Type) {
 		l.step()
 		l.pushState(attributeState)
 		return token.Equal
+	case l.cp == '{':
+		l.step()
+		l.pushState(expressionState)
+		return token.LeftBrace
 	case isSpace(l.cp):
 		l.step()
 		for isSpace(l.cp) && l.cp != eof {
@@ -312,7 +316,7 @@ func startCloseTagState(l *Lexer) token.Type {
 		return token.Slash
 	case isAlpha(l.cp):
 		l.step()
-		for isAlphaNumeric(l.cp) {
+		for isAlphaNumeric(l.cp) || isDash(l.cp) {
 			l.step()
 		}
 		switch l.text() {
@@ -346,12 +350,16 @@ func attributeState(l *Lexer) (t token.Type) {
 		return l.unexpected()
 	case l.cp == '\'':
 		l.step()
-		l.pushState(attributeValueState('\'', token.Quote))
+		l.pushState(attributeValueState('\'', token.Text, token.Quote))
 		return token.Quote
 	case l.cp == '"':
 		l.step()
-		l.pushState(attributeValueState('"', token.Quote))
+		l.pushState(attributeValueState('"', token.Text, token.Quote))
 		return token.Quote
+	case l.cp == '{':
+		l.step()
+		l.pushState(attributeValueState('}', token.Expr, token.RightBrace))
+		return token.LeftBrace
 	case isSpace(l.cp):
 		return l.unexpected()
 	default:
@@ -364,7 +372,7 @@ func attributeState(l *Lexer) (t token.Type) {
 	}
 }
 
-func attributeValueState(until rune, t token.Type) state {
+func attributeValueState(until rune, midToken, endToken token.Type) state {
 	return func(l *Lexer) token.Type {
 		switch l.cp {
 		case eof:
@@ -375,12 +383,16 @@ func attributeValueState(until rune, t token.Type) state {
 			// Pop out of attributeState as well
 			// TODO: clean this up
 			l.popState()
-			return t
+			return endToken
+		case '{':
+			l.step()
+			l.pushState(expressionState)
+			return token.LeftBrace
 		default:
-			for l.cp != until && l.cp != eof {
+			for l.cp != until && l.cp != '{' && l.cp != eof {
 				l.step()
 			}
-			return token.Text
+			return midToken
 		}
 	}
 }
@@ -476,6 +488,10 @@ func isAlpha(cp rune) bool {
 
 func isAlphaNumeric(cp rune) bool {
 	return isAlpha(cp) || (cp >= '0' && cp <= '9')
+}
+
+func isDash(cp rune) bool {
+	return cp == '-'
 }
 
 func isSpace(cp rune) bool {

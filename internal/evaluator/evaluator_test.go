@@ -31,6 +31,9 @@ func equal(t *testing.T, name, input string, props interface{}, expected string)
 		} else {
 			// TODO: remove this, this should happen earlier
 			actual = strings.TrimSpace(str.String())
+			actual = strings.ReplaceAll(actual, "  ", "")
+			actual = strings.ReplaceAll(actual, "\t", "")
+			actual = strings.ReplaceAll(actual, "\n", "")
 		}
 		if actual == expected {
 			return
@@ -71,9 +74,22 @@ func TestSimple(t *testing.T) {
 	equal(t, "planet", `<h1>hello {planet}!</h1>`, Map{"planet": "mars"}, `<h1>hello mars!</h1>`)
 	equal(t, "planet", `<h1>hello {planet}!</h1>`, Map{}, `<h1>hello !</h1>`)
 	equal(t, "greeting_planet", `<h1>{greeting} {planet}!</h1>`, Map{"greeting": "hola", "planet": "Earth"}, `<h1>hola Earth!</h1>`)
+	equal(t, "attributes", `<hr target={target} />`, Map{"target": "_blank"}, `<hr target="_blank"/>`)
+	equal(t, "attributes", `<hr target={target} />`, Map{}, `<hr/>`)
+	equal(t, "attributes", `<hr name="{target}-{name}" />`, Map{"target": "_blank", "name": "anki"}, `<hr name="_blank-anki"/>`)
+	equal(t, "attributes", `<hr name="{target}-{name}" />`, Map{"target": "_blank"}, `<hr name="_blank-"/>`)
+	equal(t, "attributes", `<hr name="{target}-{name}" />`, Map{"name": "anki"}, `<hr name="-anki"/>`)
+	equal(t, "attributes", `<hr target="{target}-{name}" />`, Map{}, `<hr target="-"/>`)
+	equal(t, "attributes", `<hr {name} />`, Map{"name": "hello"}, `<hr name="hello"/>`)
+	equal(t, "attributes", `<hr {name} />`, Map{}, `<hr/>`)
+	// TODO: Should this be `<h1 name></h1>`?
+	equal(t, "attributes", `<h1 name=""></h1>`, Map{}, `<h1></h1>`)
 }
 
 func TestFile(t *testing.T) {
-	equalFile(t, "01-greeting.svelte", Map{}, `<h1></h1>`)
-	equalFile(t, "01-greeting.svelte", Map{"greeting": "hi"}, `<h1>hi</h1>`)
+	equalFile(t, "01-greeting.html", Map{}, `<h1></h1>`)
+	equalFile(t, "01-greeting.html", Map{"greeting": "hi"}, `<h1>hi</h1>`)
+	equalFile(t, "02-attribute.html", Map{}, `<div><hr/><hr/><hr/><hr name="-"/></div>`)
+	equalFile(t, "02-attribute.html", Map{"name": "anki"}, `<div><hr name="anki"/><hr name="anki"/><hr name="anki"/><hr name="-anki"/></div>`)
+	equalFile(t, "02-attribute.html", Map{"target": "window", "name": "anki"}, `<div><hr name="anki"/><hr name="anki"/><hr name="anki"/><hr name="window-anki"/></div>`)
 }

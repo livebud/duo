@@ -2,7 +2,7 @@
   export let greeting = "hello"
   setInterval(() => {
     greeting += "o"
-  }, 500)
+  }, 1000)
 </script>
 
-<h1>{greeting}</h1>
+<h1 name="">{greeting}</h1>

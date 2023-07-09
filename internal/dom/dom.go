@@ -103,7 +103,7 @@ func generateFragment(scope *js.Scope, node ast.Fragment) (js.IExpr, error) {
 func generateText(scope *js.Scope, node *ast.Text) (*js.LiteralExpr, error) {
 	// TODO handle escaping & different types of text
 	return &js.LiteralExpr{
-		Data:      []byte(node.Value),
+		Data:      []byte(strconv.Quote(node.Value)),
 		TokenType: js.StringToken,
 	}, nil
 }
@@ -161,18 +161,58 @@ func generateAttribute(scope *js.Scope, node ast.Attribute) (js.Property, error)
 	switch n := node.(type) {
 	case *ast.Field:
 		return generateField(scope, n)
+	case *ast.AttributeShorthand:
+		return generateAttributeShorthand(scope, n)
 	default:
 		return js.Property{}, fmt.Errorf("unable to generate attribute %T", node)
 	}
 }
 
 func generateField(scope *js.Scope, node *ast.Field) (js.Property, error) {
+	values, err := generateValues(scope, node.Values)
+	if err != nil {
+		return js.Property{}, err
+	}
 	return js.Property{
 		Name: &js.PropertyName{
 			Literal: toIdentifier([]byte(node.Key)),
 		},
-		Value: node.Value,
+		Value: concat(values),
 	}, nil
+}
+
+func generateAttributeShorthand(scope *js.Scope, node *ast.AttributeShorthand) (js.Property, error) {
+	return js.Property{
+		Name: &js.PropertyName{
+			Literal: toIdentifier([]byte(node.Key)),
+		},
+		Value: rewriteVar(scope, "__props__", &js.Var{
+			Data: []byte(node.Key),
+		}),
+	}, nil
+}
+
+func generateValues(scope *js.Scope, values []ast.Value) ([]js.IExpr, error) {
+	var exprs []js.IExpr
+	for _, value := range values {
+		expr, err := generateValue(scope, value)
+		if err != nil {
+			return nil, err
+		}
+		exprs = append(exprs, expr)
+	}
+	return exprs, nil
+}
+
+func generateValue(scope *js.Scope, value ast.Value) (js.IExpr, error) {
+	switch n := value.(type) {
+	case *ast.Text:
+		return generateText(scope, n)
+	case *ast.Mustache:
+		return generateMustache(scope, n)
+	default:
+		return nil, fmt.Errorf("unable to generate value %T", value)
+	}
 }
 
 // Create `h('h1', { ... }, [ ... ])`
@@ -189,6 +229,24 @@ func createElement(scope *js.Scope, name string) *js.CallExpr {
 				},
 			},
 		},
+	}
+}
+
+func concat(values []js.IExpr) js.IExpr {
+	if len(values) == 0 {
+		return &js.LiteralExpr{
+			Data:      []byte(""),
+			TokenType: js.StringToken,
+		}
+	} else if len(values) == 1 {
+		return values[0]
+	}
+	left := concat(values[:len(values)-1])
+	right := values[len(values)-1]
+	return &js.BinaryExpr{
+		X:  left,
+		Op: js.AddToken,
+		Y:  right,
 	}
 }
 

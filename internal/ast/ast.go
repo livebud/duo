@@ -77,6 +77,7 @@ func (e *Element) print(indent string) string {
 	out.WriteString("<")
 	out.WriteString(e.Name)
 	for _, attr := range e.Attributes {
+		out.WriteString(" ")
 		out.WriteString(attr.print(" "))
 	}
 	if e.SelfClosing {
@@ -85,11 +86,8 @@ func (e *Element) print(indent string) string {
 	}
 	out.WriteString(">")
 	if len(e.Children) > 0 {
-		out.WriteByte('\n')
 		for _, child := range e.Children {
-			out.WriteString(indent + "\t")
 			out.WriteString(child.print(indent + "\t"))
-			out.WriteByte('\n')
 		}
 	}
 	out.WriteString(indent)
@@ -131,6 +129,11 @@ func (e *Script) print(indent string) string {
 	return out.String()
 }
 
+// type Attribute struct {
+// 	Key   string
+// 	Value []Value
+// }
+
 type Attribute interface {
 	Node
 	attribute()
@@ -138,11 +141,12 @@ type Attribute interface {
 
 var (
 	_ Attribute = (*Field)(nil)
+	_ Attribute = (*AttributeShorthand)(nil)
 )
 
 type Field struct {
-	Key   string
-	Value *js.LiteralExpr
+	Key    string
+	Values []Value
 }
 
 func (f *Field) attribute() {}
@@ -150,14 +154,45 @@ func (f *Field) attribute() {}
 func (f *Field) Type() string { return "Field" }
 
 func (f *Field) print(indent string) string {
-	return f.Key + "=" + f.Value.JS()
+	out := new(strings.Builder)
+	out.WriteString(f.Key)
+	out.WriteString("=")
+	out.WriteByte('"')
+	for _, v := range f.Values {
+		out.WriteString(v.print(""))
+	}
+	out.WriteByte('"')
+	return out.String()
 }
+
+type AttributeShorthand struct {
+	Key string
+}
+
+func (a *AttributeShorthand) attribute() {}
+
+func (a *AttributeShorthand) Type() string { return "AttributeShorthand" }
+
+func (a *AttributeShorthand) print(indent string) string {
+	return "{" + a.Key + "}"
+}
+
+type Value interface {
+	Node
+	value()
+}
+
+var (
+	_ Value = (*Mustache)(nil)
+	_ Value = (*Text)(nil)
+)
 
 type Mustache struct {
 	Expr js.IExpr
 }
 
 func (m *Mustache) fragment() {}
+func (m *Mustache) value()    {}
 
 func (m *Mustache) Type() string { return "Mustache" }
 
@@ -170,6 +205,7 @@ type Text struct {
 }
 
 func (t *Text) fragment() {}
+func (t *Text) value()    {}
 
 func (t *Text) Type() string { return "Text" }
 
