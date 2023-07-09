@@ -235,7 +235,7 @@ func createElement(scope *js.Scope, name string) *js.CallExpr {
 func concat(values []js.IExpr) js.IExpr {
 	if len(values) == 0 {
 		return &js.LiteralExpr{
-			Data:      []byte(""),
+			Data:      []byte{'"', '"'},
 			TokenType: js.StringToken,
 		}
 	} else if len(values) == 1 {

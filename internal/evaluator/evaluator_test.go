@@ -89,7 +89,7 @@ func TestSimple(t *testing.T) {
 func TestFile(t *testing.T) {
 	equalFile(t, "01-greeting.html", Map{}, `<h1></h1>`)
 	equalFile(t, "01-greeting.html", Map{"greeting": "hi"}, `<h1>hi</h1>`)
-	equalFile(t, "02-attribute.html", Map{}, `<div><hr/><hr/><hr/><hr name="-"/></div>`)
-	equalFile(t, "02-attribute.html", Map{"name": "anki"}, `<div><hr name="anki"/><hr name="anki"/><hr name="anki"/><hr name="-anki"/></div>`)
-	equalFile(t, "02-attribute.html", Map{"target": "window", "name": "anki"}, `<div><hr name="anki"/><hr name="anki"/><hr name="anki"/><hr name="window-anki"/></div>`)
+	equalFile(t, "02-attribute.html", Map{}, `<div><hr/><hr/><hr/><hr name="-"/><hr/></div>`)
+	equalFile(t, "02-attribute.html", Map{"name": "anki"}, `<div><hr name="anki"/><hr name="anki"/><hr name="anki"/><hr name="-anki"/><hr/></div>`)
+	equalFile(t, "02-attribute.html", Map{"target": "window", "name": "anki"}, `<div><hr name="anki"/><hr name="anki"/><hr name="anki"/><hr name="window-anki"/><hr/></div>`)
 }
