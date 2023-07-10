@@ -65,4 +65,5 @@ func replaceExt(path, ext string) string {
 func TestFile(t *testing.T) {
 	equalFile(t, "01-greeting.html")
 	equalFile(t, "02-attribute.html")
+	equalFile(t, "03-counter.html")
 }

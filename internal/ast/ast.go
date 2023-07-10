@@ -13,7 +13,6 @@ type Node interface {
 var (
 	_ Node = (*Document)(nil)
 	_ Node = (*Element)(nil)
-	// _ Node = (*Component)(nil)
 	_ Node = (*Field)(nil)
 	_ Node = (*Mustache)(nil)
 	_ Node = (*Text)(nil)
@@ -145,8 +144,9 @@ var (
 )
 
 type Field struct {
-	Key    string
-	Values []Value
+	Key          string
+	Values       []Value
+	EventHandler bool
 }
 
 func (f *Field) attribute() {}
@@ -157,6 +157,10 @@ func (f *Field) print(indent string) string {
 	out := new(strings.Builder)
 	out.WriteString(f.Key)
 	out.WriteString("=")
+	if f.EventHandler && len(f.Values) > 0 {
+		out.WriteString(f.Values[0].print(""))
+		return out.String()
+	}
 	out.WriteByte('"')
 	for _, v := range f.Values {
 		out.WriteString(v.print(""))
@@ -166,7 +170,8 @@ func (f *Field) print(indent string) string {
 }
 
 type AttributeShorthand struct {
-	Key string
+	Key          string
+	EventHandler bool
 }
 
 func (a *AttributeShorthand) attribute() {}

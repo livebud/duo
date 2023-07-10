@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/livebud/duo/internal/ast"
+	"github.com/livebud/duo/internal/event"
 	"github.com/livebud/duo/internal/lexer"
 	"github.com/livebud/duo/internal/token"
 	"github.com/tdewolff/parse/v2"
@@ -163,24 +164,31 @@ openTag:
 }
 
 func (p *Parser) parseAttribute() (ast.Attribute, error) {
-	field := new(ast.Field)
 	key := p.l.Token.Text
+	return p.parseField(key)
+}
+
+func (p *Parser) parseField(key string) (*ast.Field, error) {
+	field := new(ast.Field)
 	field.Key = key
+	field.EventHandler = event.Is(key)
 	for p.l.Next() {
 		switch p.l.Token.Type {
-		case token.Space, token.SlashGreaterThan, token.GreaterThan:
-			return field, nil
 		case token.Equal:
+			if field.EventHandler {
+				value, err := p.parseEventValue()
+				if err != nil {
+					return nil, err
+				}
+				field.Values = append(field.Values, value)
+				return field, nil
+			}
 			values, err := p.parseAttributeValues()
 			if err != nil {
 				return nil, err
 			}
 			field.Values = values
-			// End of tag
-			switch p.l.Token.Type {
-			case token.Space, token.SlashGreaterThan, token.GreaterThan:
-				return field, nil
-			}
+			return field, nil
 		default:
 			return nil, p.unexpected()
 		}
@@ -231,7 +239,19 @@ func (p *Parser) parseAttributeStringValues() (values []ast.Value, err error) {
 			return nil, p.unexpected()
 		}
 	}
-	return values, nil
+	return nil, p.unexpected()
+}
+
+func (p *Parser) parseEventValue() (value ast.Value, err error) {
+	for p.l.Next() {
+		switch p.l.Token.Type {
+		case token.LeftBrace:
+			return p.parseMustache()
+		default:
+			return nil, p.unexpected()
+		}
+	}
+	return nil, p.unexpected()
 }
 
 func (p *Parser) parseMustache() (*ast.Mustache, error) {
@@ -268,6 +288,7 @@ func (p *Parser) parseAttributeShorthand() (ast.Attribute, error) {
 	}
 	name := string(ident.Data)
 	node.Key = name
+	node.EventHandler = event.Is(name)
 	p.l.Next()
 	if p.l.Token.Type != token.RightBrace {
 		return nil, p.unexpected()

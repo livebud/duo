@@ -358,7 +358,8 @@ func attributeState(l *Lexer) (t token.Type) {
 		return token.Quote
 	case l.cp == '{':
 		l.step()
-		l.pushState(attributeValueState('}', token.Expr, token.RightBrace))
+		l.popState()
+		l.pushState(expressionState)
 		return token.LeftBrace
 	case isSpace(l.cp):
 		return l.unexpected()
@@ -441,10 +442,25 @@ func expressionState(l *Lexer) token.Type {
 			l.popState()
 			return token.RightBrace
 		default:
-			for l.cp != '}' && l.cp != eof {
-				l.step()
+			// Handle inner right brace } characters
+			depth := 1
+			for {
+				switch l.cp {
+				case eof:
+					return l.unexpected()
+				case '{':
+					depth++
+					l.step()
+				case '}':
+					depth--
+					if depth == 0 {
+						return token.Expr
+					}
+					l.step()
+				default:
+					l.step()
+				}
 			}
-			return token.Expr
 		}
 	}
 }

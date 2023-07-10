@@ -30,10 +30,11 @@ func equal(t *testing.T, name, input string, props interface{}, expected string)
 			actual = err.Error()
 		} else {
 			// TODO: remove this, this should happen earlier
-			actual = strings.TrimSpace(str.String())
-			actual = strings.ReplaceAll(actual, "  ", "")
-			actual = strings.ReplaceAll(actual, "\t", "")
-			actual = strings.ReplaceAll(actual, "\n", "")
+			actual = str.String()
+			// actual = strings.TrimSpace(str.String())
+			// actual = strings.ReplaceAll(actual, "  ", "")
+			// actual = strings.ReplaceAll(actual, "\t", "")
+			// actual = strings.ReplaceAll(actual, "\n", "")
 		}
 		if actual == expected {
 			return
@@ -61,7 +62,7 @@ func equalFile(t *testing.T, name string, props interface{}, expected string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	equal(t, name, string(input), props, expected)
+	equal(t, name, strings.TrimSpace(string(input)), props, expected)
 }
 
 type Map = map[string]interface{}
@@ -86,10 +87,37 @@ func TestSimple(t *testing.T) {
 	equal(t, "attributes", `<h1 name=""></h1>`, Map{}, `<h1></h1>`)
 }
 
+func TestEventHandler(t *testing.T) {
+	equal(t, "", "<button onClick={increment}>+</button>", Map{}, `<button>+</button>`)
+	equal(t, "", "<button onClick={() => count++}>+</button>", Map{}, `<button>+</button>`)
+	equal(t, "", "<button onMouseOver={() => count++}>+</button>", Map{}, `<button>+</button>`)
+	equal(t, "", "<button onMouseOver={() => { count++ }}>+</button>", Map{}, `<button>+</button>`)
+	equal(t, "", "<button onMouseOver={()=>{count++}}>+</button>", Map{}, `<button>+</button>`)
+	equal(t, "", "<button onMouseOut={() => count++}>+</button>", Map{}, `<button>+</button>`)
+	equal(t, "", "<button onClick={increment} onDragStart={() => count++}>+</button>", Map{}, `<button>+</button>`)
+	equal(t, "", "<button {onClick} {onDragStart}>+</button>", Map{}, `<button>+</button>`)
+}
+
+func TestExpr(t *testing.T) {
+	equal(t, "", `<h1>{1+1}</h1>`, Map{}, `<h1>2</h1>`)
+	equal(t, "", `<h1>{true?'a':'b'}</h1>`, Map{}, `<h1>a</h1>`)
+	equal(t, "", `<h1>{false?'a':'b'}</h1>`, Map{}, `<h1>b</h1>`)
+	equal(t, "", `<h1>{true===true?'a':'b'}</h1>`, Map{}, `<h1>a</h1>`)
+	equal(t, "", `<h1>{true===false?'a':'b'}</h1>`, Map{}, `<h1>b</h1>`)
+	equal(t, "", `<button>{count} {count === 1 ? 'time' : 'times'}</button>`, Map{}, `<button> times</button>`)
+	equal(t, "", `<button>{count} {count === 1 ? 'time' : 'times'}</button>`, Map{"count": 0}, `<button>0 times</button>`)
+	equal(t, "", `<button>{count} {count === 1 ? 'time' : 'times'}</button>`, Map{"count": 1}, `<button>1 time</button>`)
+	equal(t, "", `<button>{count} {count === 1 ? 'time' : 'times'}</button>`, Map{"count": 2}, `<button>2 times</button>`)
+	equal(t, "", `<button>{count} {count === 1 ? 'time' : 'times'}</button>`, Map{"count": 99}, `<button>99 times</button>`)
+}
+
 func TestFile(t *testing.T) {
-	equalFile(t, "01-greeting.html", Map{}, `<h1></h1>`)
-	equalFile(t, "01-greeting.html", Map{"greeting": "hi"}, `<h1>hi</h1>`)
-	equalFile(t, "02-attribute.html", Map{}, `<div><hr/><hr/><hr/><hr name="-"/><hr/></div>`)
-	equalFile(t, "02-attribute.html", Map{"name": "anki"}, `<div><hr name="anki"/><hr name="anki"/><hr name="anki"/><hr name="-anki"/><hr/></div>`)
-	equalFile(t, "02-attribute.html", Map{"target": "window", "name": "anki"}, `<div><hr name="anki"/><hr name="anki"/><hr name="anki"/><hr name="window-anki"/><hr/></div>`)
+	equalFile(t, "01-greeting.html", Map{}, "\n\n<h1></h1>")
+	equalFile(t, "01-greeting.html", Map{"greeting": "hi"}, "\n\n<h1>hi</h1>")
+	equalFile(t, "02-attribute.html", Map{}, "<div>\n  <hr/>\n  <hr/>\n  <hr/>\n  <hr name=\"-\"/>\n  <hr/>\n</div>")
+	equalFile(t, "02-attribute.html", Map{"name": "anki"}, "<div>\n  <hr name=\"anki\"/>\n  <hr name=\"anki\"/>\n  <hr name=\"anki\"/>\n  <hr name=\"-anki\"/>\n  <hr/>\n</div>")
+	equalFile(t, "02-attribute.html", Map{"target": "window", "name": "anki"}, "<div>\n  <hr name=\"anki\"/>\n  <hr name=\"anki\"/>\n  <hr name=\"anki\"/>\n  <hr name=\"window-anki\"/>\n  <hr/>\n</div>")
+	equalFile(t, "03-counter.html", Map{}, "\n\n<button>\n  Clicked 0 times\n</button>")
+	equalFile(t, "03-counter.html", Map{"count": 1}, "\n\n<button>\n  Clicked 1 time\n</button>")
+	equalFile(t, "03-counter.html", Map{"count": 10}, "\n\n<button>\n  Clicked 10 times\n</button>")
 }

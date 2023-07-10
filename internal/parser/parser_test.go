@@ -60,14 +60,25 @@ func Test(t *testing.T) {
 	equal(t, "attributes", `<h1 class="hello" id="cool">{greeting}</h1>`, `<h1 class="hello" id="cool">{greeting}</h1>`)
 	equal(t, "attribute", `<hr class="hello"/>`, `<hr class="hello" />`)
 	equal(t, "attribute", `<hr class="hello"   />`, `<hr class="hello" />`)
-	equal(t, "attributes", `<hr data-set={set} />`, `<hr data-set="{set}" />`)
-	equal(t, "attributes", `<hr class={name} />`, `<hr class="{name}" />`)
-	equal(t, "attributes", `<hr class={name}/>`, `<hr class="{name}" />`)
-	equal(t, "attributes", `<h1 name={greeting}>{greeting}</h1>`, `<h1 name="{greeting}">{greeting}</h1>`)
-	equal(t, "attributes", `<hr class="hi-{name}-world" />`, `<hr class="hi-{name}-world" />`)
-	equal(t, "attributes", `<hr class="a{b}c{d}" />`, `<hr class="a{b}c{d}" />`)
-	equal(t, "attributes", `<hr {id} />`, `<hr {id} />`)
-	equal(t, "attributes", `<h1 name="">{greeting}</h1>`, `<h1 name="">{greeting}</h1>`)
+	equal(t, "attribute", `<hr data-set={set} />`, `<hr data-set="{set}" />`)
+	equal(t, "attribute", `<hr class={name} />`, `<hr class="{name}" />`)
+	equal(t, "attribute", `<hr class={name}/>`, `<hr class="{name}" />`)
+	equal(t, "attribute", `<h1 name={greeting}>{greeting}</h1>`, `<h1 name="{greeting}">{greeting}</h1>`)
+	equal(t, "attribute", `<hr class="hi-{name}-world" />`, `<hr class="hi-{name}-world" />`)
+	equal(t, "attribute", `<hr class="a{b}c{d}" />`, `<hr class="a{b}c{d}" />`)
+	equal(t, "attribute", `<hr {id} />`, `<hr {id} />`)
+	equal(t, "attribute", `<h1 name="">{greeting}</h1>`, `<h1 name="">{greeting}</h1>`)
+}
+
+func TestEventHandler(t *testing.T) {
+	equal(t, "", "<button onClick={increment}>+</button>", `<button onClick={increment}>+</button>`)
+	equal(t, "", "<button onClick={() => count++}>+</button>", `<button onClick={() => { return count++; }}>+</button>`)
+	equal(t, "", "<button onMouseOver={() => count++}>+</button>", `<button onMouseOver={() => { return count++; }}>+</button>`)
+	equal(t, "", "<button onMouseOver={() => { count++ }}>+</button>", `<button onMouseOver={() => { count++; }}>+</button>`)
+	equal(t, "", "<button onMouseOver={()=>{count++}}>+</button>", `<button onMouseOver={() => { count++; }}>+</button>`)
+	equal(t, "", "<button onMouseOut={() => count++}>+</button>", `<button onMouseOut={() => { return count++; }}>+</button>`)
+	equal(t, "", "<button onClick={increment} onDragStart={() => count++}>+</button>", `<button onClick={increment} onDragStart={() => { return count++; }}>+</button>`)
+	equal(t, "", "<button {onClick} {onDragStart}>+</button>", `<button {onClick} {onDragStart}>+</button>`)
 }
 
 func TestFile(t *testing.T) {

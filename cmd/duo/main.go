@@ -191,6 +191,7 @@ var clientCode = `
 
 func (s *Serve) openClient(name string) (fs.File, error) {
 	f, err := openFile(
+		filepath.Join(s.Dir, name),
 		filepath.Join(s.Dir, removeExt(name)+".svelte"),
 		filepath.Join(s.Dir, removeExt(name)+".html"),
 		filepath.Join(s.Dir, removeExt(name)+".duo"),
@@ -207,13 +208,22 @@ func (s *Serve) openClient(name string) (fs.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	jsCode, err := duo.Generate(name, code)
-	if err != nil {
-		return nil, fmt.Errorf("error generating %s: %w", name, err)
-	}
 	// Close the existing file because we don't need it anymore
 	if f.Close(); err != nil {
 		return nil, err
+	}
+	if filepath.Ext(f.Name()) == ".js" {
+		bf := &virtual.File{
+			Path:    name,
+			Data:    []byte(code),
+			Mode:    fi.Mode(),
+			ModTime: fi.ModTime(),
+		}
+		return bf.Open(), nil
+	}
+	jsCode, err := duo.Generate(name, code)
+	if err != nil {
+		return nil, fmt.Errorf("error generating %s: %w", name, err)
 	}
 	bf := &virtual.File{
 		Path:    name,
@@ -274,9 +284,9 @@ func (s *Serve) Open(name string) (fs.File, error) {
 	// Inject the live reload script
 	if bytes.Contains(html, []byte(`<html>`)) {
 		html = append(html, []byte(liveReloadScript)...)
-		html = append(html, []byte(fmt.Sprintf(clientCode, "./"+removeExt(name)+".js"))...)
+		html = append(html, []byte(fmt.Sprintf(clientCode, "/"+removeExt(name)+".js"))...)
 	} else {
-		client := fmt.Sprintf(clientCode, "./"+removeExt(name)+".js")
+		client := fmt.Sprintf(clientCode, "/"+removeExt(name)+".js")
 		body := fmt.Sprintf("%s\n%s\n%s", string(html), liveReloadScript, client)
 		html = []byte(fmt.Sprintf(htmlPage, body))
 	}

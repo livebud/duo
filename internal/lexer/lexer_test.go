@@ -111,3 +111,14 @@ func TestDoctype(t *testing.T) {
 	equal(t, "", "<!DOCTYPE html />", `<!doctype:"<!DOCTYPE" space:" " identifier:"html" space:" " />`)
 	equal(t, "", "<!DOCTYPE html/>", `<!doctype:"<!DOCTYPE" space:" " identifier:"html" />`)
 }
+
+func TestEventHandler(t *testing.T) {
+	equal(t, "", "<button onClick={increment}>+</button>", `< identifier:"button" space:" " identifier:"onClick" = { expr:"increment" } > text:"+" </ identifier:"button" >`)
+	equal(t, "", "<button onClick={() => count++}>+</button>", `< identifier:"button" space:" " identifier:"onClick" = { expr:"() => count++" } > text:"+" </ identifier:"button" >`)
+	equal(t, "", "<button onMouseOver={() => count++}>+</button>", `< identifier:"button" space:" " identifier:"onMouseOver" = { expr:"() => count++" } > text:"+" </ identifier:"button" >`)
+	equal(t, "", "<button onMouseOver={() => { count++ }}>+</button>", `< identifier:"button" space:" " identifier:"onMouseOver" = { expr:"() => { count++ }" } > text:"+" </ identifier:"button" >`)
+	equal(t, "", "<button onMouseOver={()=>{count++}}>+</button>", `< identifier:"button" space:" " identifier:"onMouseOver" = { expr:"()=>{count++}" } > text:"+" </ identifier:"button" >`)
+	equal(t, "", "<button onMouseOut={() => count++}>+</button>", `< identifier:"button" space:" " identifier:"onMouseOut" = { expr:"() => count++" } > text:"+" </ identifier:"button" >`)
+	equal(t, "", "<button onClick={increment} onDragStart={() => count++}>+</button>", `< identifier:"button" space:" " identifier:"onClick" = { expr:"increment" } space:" " identifier:"onDragStart" = { expr:"() => count++" } > text:"+" </ identifier:"button" >`)
+	equal(t, "", "<button {onClick} {onDragStart}>+</button>", `< identifier:"button" space:" " { expr:"onClick" } space:" " { expr:"onDragStart" } > text:"+" </ identifier:"button" >`)
+}

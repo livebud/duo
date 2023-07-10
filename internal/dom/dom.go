@@ -148,13 +148,63 @@ func generateElement(scope *js.Scope, node *ast.Element) (*js.CallExpr, error) {
 }
 
 func generateMustache(scope *js.Scope, node *ast.Mustache) (js.IExpr, error) {
-	switch n := node.Expr.(type) {
+	return generateExpr(scope, node.Expr)
+}
+
+func generateExpr(scope *js.Scope, node js.IExpr) (js.IExpr, error) {
+	switch n := node.(type) {
+	case *js.LiteralExpr:
+		return generateLiteralExpr(scope, n)
 	case *js.Var:
 		expr := rewriteVar(scope, "__props__", n)
 		return expr, nil
+	case *js.CondExpr:
+		return generateCondExpr(scope, n)
+	case *js.BinaryExpr:
+		return generateBinaryExpr(scope, n)
 	default:
-		return nil, fmt.Errorf("unable to generate mustache for %T", n)
+		return nil, fmt.Errorf("unable to generate expression for %T", n)
 	}
+}
+
+func generateLiteralExpr(scope *js.Scope, node *js.LiteralExpr) (js.IExpr, error) {
+	return node, nil
+}
+
+func generateCondExpr(scope *js.Scope, node *js.CondExpr) (js.IExpr, error) {
+	cond, err := generateExpr(scope, node.Cond)
+	if err != nil {
+		return nil, err
+	}
+	x, err := generateExpr(scope, node.X)
+	if err != nil {
+		return nil, err
+	}
+	y, err := generateExpr(scope, node.Y)
+	if err != nil {
+		return nil, err
+	}
+	return &js.CondExpr{
+		Cond: cond,
+		X:    x,
+		Y:    y,
+	}, nil
+}
+
+func generateBinaryExpr(scope *js.Scope, node *js.BinaryExpr) (js.IExpr, error) {
+	x, err := generateExpr(scope, node.X)
+	if err != nil {
+		return nil, err
+	}
+	y, err := generateExpr(scope, node.Y)
+	if err != nil {
+		return nil, err
+	}
+	return &js.BinaryExpr{
+		X:  x,
+		Op: node.Op,
+		Y:  y,
+	}, nil
 }
 
 func generateAttribute(scope *js.Scope, node ast.Attribute) (js.Property, error) {
@@ -271,6 +321,8 @@ func (s *script) transformTopLevelStmt(scope *js.Scope, node js.IStmt) error {
 		return nil
 	case *js.ExportStmt:
 		return s.transformExportStmt(scope, stmt)
+	case *js.VarDecl:
+		return s.transformExportVarDecl(scope, stmt)
 	default:
 		if err := transformStmt(scope, stmt); err != nil {
 			return err
@@ -294,6 +346,8 @@ func transformStmt(scope *js.Scope, node js.IStmt) error {
 	switch stmt := node.(type) {
 	case *js.ExprStmt:
 		return transformExprStmt(scope, stmt)
+	case *js.FuncDecl:
+		return transformFuncDecl(scope, stmt)
 	default:
 		return fmt.Errorf("unknown statement %T", stmt)
 	}
@@ -344,6 +398,14 @@ func (s *script) transformExportBindingElement(scope *js.Scope, node *js.Binding
 
 func transformExprStmt(scope *js.Scope, node *js.ExprStmt) error {
 	return transformExpr(scope, node.Value)
+}
+
+func transformFuncDecl(scope *js.Scope, node *js.FuncDecl) error {
+	// TODO: this should be js.FunctionDecl, but that panics
+	if _, ok := scope.Declare(js.NoDecl, node.Name.Data); !ok {
+		return fmt.Errorf("transform: unable to declare %s", node.Name.Data)
+	}
+	return transformBlockStmt(scope, &node.Body)
 }
 
 func transformCallExpr(scope *js.Scope, node *js.CallExpr) error {

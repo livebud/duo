@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strconv"
+	"strings"
 
 	"github.com/livebud/duo/internal/ast"
 	"github.com/tdewolff/parse/v2/js"
@@ -124,6 +126,10 @@ func (e *evaluator) evaluateAttribute(w writer, scope reflect.Value, node ast.At
 
 func (e *evaluator) evaluateField(w writer, scope reflect.Value, node *ast.Field) error {
 	buf := new(bytes.Buffer)
+	// Skip event handlers
+	if node.EventHandler {
+		return nil
+	}
 	for _, value := range node.Values {
 		if err := e.evaluateValue(buf, scope, value); err != nil {
 			return err
@@ -143,20 +149,26 @@ func (e *evaluator) evaluateField(w writer, scope reflect.Value, node *ast.Field
 }
 
 func (e *evaluator) evaluateAttributeShorthand(w writer, scope reflect.Value, node *ast.AttributeShorthand) error {
-	buf := new(bytes.Buffer)
-	if err := e.evaluateIdentifier(buf, scope, &js.LiteralExpr{
+	// buf := new(bytes.Buffer)
+	// Skip event handlers
+	if node.EventHandler {
+		return nil
+	}
+	value, err := evaluateExpr(scope, &js.LiteralExpr{
 		Data:      []byte(node.Key),
 		TokenType: js.IdentifierToken,
-	}); err != nil {
+	})
+	if err != nil {
 		return err
-	}
-	if buf.Len() == 0 {
+	} else if !value.IsValid() {
 		return nil
 	}
 	w.WriteString(node.Key)
 	w.WriteByte('=')
 	w.WriteByte('"')
-	w.Write(buf.Bytes())
+	if err := e.writeValue(w, value); err != nil {
+		return err
+	}
 	w.WriteByte('"')
 	return nil
 }
@@ -178,125 +190,230 @@ func (e *evaluator) evaluateText(w writer, scope reflect.Value, node *ast.Text) 
 }
 
 func (e *evaluator) evaluateMustache(w writer, scope reflect.Value, node *ast.Mustache) error {
-	return e.evaluateExpr(w, scope, node.Expr)
-}
-
-func (e *evaluator) evaluateExpr(w writer, scope reflect.Value, node js.IExpr) error {
-	switch n := node.(type) {
-	case *js.LiteralExpr:
-		return e.evaluateLiteralExpr(w, scope, n)
-	case *js.Var:
-		return e.evaluateVar(w, scope, n)
-	// case *js.Identifier:
-	// 	return e.evaluateIdentifierExpr(w,scope, n)
-	// case *js.
-	// case *js.MemberExpr:
-	// 	return e.evaluateMemberExpr(w,scope, n)
-	// case *js.CallExpr:
-	// 	return e.evaluateCallExpr(w,scope, n)
-	// case *js.BinaryExpr:
-	// 	return e.evaluateBinaryExpr(w,scope, n)
-	// case *js.UnaryExpr:
-	// 	return e.evaluateUnaryExpr(w,scope, n)
-	// case *js.ConditionalExpr:
-	// 	return e.evaluateConditionalExpr(w,scope, n)
-	// case *js.ArrayExpr:
-	// 	return e.evaluateArrayExpr(w,scope, n)
-	// case *js.ObjectExpr:
-	// 	return e.evaluateObjectExpr(w,scope, n)
-	// case *js.FunctionExpr:
-	// 	return e.evaluateFunctionExpr(w,scope, n)
-	// case *js.TemplateExpr:
-	// 	return e.evaluateTemplateExpr(w,scope, n)
-	// case *js.TaggedTemplateExpr:
-	// 	return e.evaluateTaggedTemplateExpr(w,scope, n)
-	// case *js.ParenExpr:
-	// 	return e.evaluateParenExpr(w,scope, n)
-	default:
-		return fmt.Errorf("unknown expression %T", n)
+	value, err := evaluateExpr(scope, node.Expr)
+	if err != nil {
+		return err
 	}
+	return e.writeValue(w, value)
 }
 
-func (e *evaluator) evaluateVar(w writer, scope reflect.Value, node *js.Var) error {
-	switch node.Decl {
-	case js.NoDecl:
-		// Since there's no parse expression function, identifiers are considered a non-declared variable
-		return e.evaluateIdentifier(w, scope, &js.LiteralExpr{
-			Data:      node.Data,
-			TokenType: js.IdentifierToken,
-		})
-	default:
-		return fmt.Errorf("unknown decl %s", node.Decl.String())
-	}
-}
-
-func (e *evaluator) evaluateIdentifier(w writer, scope reflect.Value, node *js.LiteralExpr) error {
-	// Handles nil
-	if !scope.IsValid() {
+func (e *evaluator) writeValue(w writer, value reflect.Value) error {
+	if !value.IsValid() {
 		return nil
 	}
-	switch scope.Kind() {
-	case reflect.Map:
-		value := scope.MapIndex(reflect.ValueOf(string(node.Data)))
-		if !value.IsValid() {
-			// Don't write anything
-			return nil
-		}
-		return e.writeValue(w, value.Interface())
-	default:
-		return fmt.Errorf("unexpected scope type %s", scope.Kind().String())
-	}
-}
-
-func (e *evaluator) writeValue(w writer, v interface{}) error {
+	v := value.Interface()
 	switch value := v.(type) {
 	case string:
 		w.WriteString(value)
+		return nil
+	case int64:
+		w.WriteString(strconv.FormatInt(value, 10))
+		return nil
+	case int:
+		w.WriteString(strconv.Itoa(value))
 		return nil
 	default:
 		return fmt.Errorf("unexpected value %T", value)
 	}
 }
 
-func (e *evaluator) evaluateLiteralExpr(w writer, scope reflect.Value, node *js.LiteralExpr) error {
-	switch node.TokenType {
-	case js.IdentifierToken:
-		w.Write(node.Data)
-		return nil
-	case js.StringToken:
-		w.Write(node.Data)
-		return nil
-	// case js.NumericToken:
-	// 	w.Write(node.Data)
-	// case js.RegexpLiteralToken:
-	// 	w.Write(node.Data)
-	// case js.TrueToken:
-	// 	w.WriteString("true")
-	// case js.FalseToken:
-	// 	w.WriteString("false")
-	// case js.NullToken:
-	// 	w.WriteString("null")
-	// case js.UndefinedToken:
-	// 	w.WriteString("undefined")
-	// case js.NaNToken:
-	// 	w.WriteString("NaN")
-	// case js.InfinityToken:
-	// 	w.WriteString("Infinity")
+func evaluateExpr(scope reflect.Value, node js.IExpr) (reflect.Value, error) {
+	switch n := node.(type) {
+	case *js.LiteralExpr:
+		return evaluateLiteralExpr(scope, n)
+	case *js.Var:
+		return evaluateVar(scope, n)
+	case *js.BinaryExpr:
+		return evaluateBinaryExpr(scope, n)
+	case *js.CondExpr:
+		return evaluateCondExpr(scope, n)
 	default:
-		return fmt.Errorf("unknown literal %s", node.TokenType.String())
+		return reflect.Value{}, fmt.Errorf("unknown expression %T", n)
 	}
 }
 
-// var _ walker.Interface = (*evaluation)(nil)
+func evaluateLiteralExpr(scope reflect.Value, node *js.LiteralExpr) (reflect.Value, error) {
+	switch node.TokenType {
+	case js.IdentifierToken:
+		return evaluateIdentifier(scope, node)
+	case js.StringToken:
+		// TODO: more robust unquoting.
+		// strconv.Unquote doesn't support multi-char single quotes
+		value := strings.Trim(string(node.Data), `'"`)
+		return reflect.ValueOf(value), nil
+	case js.DecimalToken:
+		// TODO: handle floats
+		// TODO: make sure 64b is right
+		n, err := strconv.ParseInt(string(node.Data), 10, 64)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		return reflect.ValueOf(n), nil
+	case js.TrueToken:
+		return reflect.ValueOf(true), nil
+	case js.FalseToken:
+		return reflect.ValueOf(false), nil
+	default:
+		return reflect.Value{}, fmt.Errorf("unknown literal expression %s", node.TokenType.String())
+	}
+}
 
-// func (e *evaluation) EnterDocument(node *ast.Document) (walker.Interface, error) {
-// 	return e, nil
-// }
+func evaluateVar(scope reflect.Value, node *js.Var) (reflect.Value, error) {
+	switch node.Decl {
+	case js.NoDecl:
+		// Since there's no parse expression function, identifiers are considered a non-declared variable
+		return evaluateIdentifier(scope, &js.LiteralExpr{
+			Data:      node.Data,
+			TokenType: js.IdentifierToken,
+		})
+	default:
+		return reflect.Value{}, fmt.Errorf("unknown decl %s", node.Decl.String())
+	}
+}
 
-// func (e *evaluation) EnterText(node *ast.Text) (walker.Interface, error) {
-// 	return e, nil
-// }
+func evaluateBinaryExpr(scope reflect.Value, node *js.BinaryExpr) (reflect.Value, error) {
+	left, err := evaluateExpr(scope, node.X)
+	if err != nil {
+		return reflect.Value{}, err
+	}
+	// if !left.IsValid() {
+	// 	return reflect.Value{}, fmt.Errorf("%s is undefined", node.X.JS())
+	// }
+	if left.Kind() == reflect.Interface {
+		left = left.Elem()
+	}
+	right, err := evaluateExpr(scope, node.Y)
+	if err != nil {
+		return reflect.Value{}, err
+	}
+	// if !right.IsValid() {
+	// 	return reflect.Value{}, fmt.Errorf("%s is undefined", node.Y.JS())
+	// }
+	if right.Kind() == reflect.Interface {
+		right = right.Elem()
+	}
+	switch node.Op {
+	case js.AddToken:
+		return evaluateAdd(scope, left, right)
+	case js.EqEqEqToken:
+		return evaluateStrictEqual(scope, left, right)
+	case js.OrToken:
+		return evaluateOr(scope, left, right)
+	default:
+		return reflect.Value{}, fmt.Errorf("unknown binary expression %s", node.Op.String())
+	}
+}
 
-// func (e *evaluation) EnterMustache(node *ast.Mustache) (walker.Interface, error) {
-// 	return e, nil
-// }
+func evaluateCondExpr(scope reflect.Value, node *js.CondExpr) (reflect.Value, error) {
+	cond, err := evaluateExpr(scope, node.Cond)
+	if err != nil {
+		return reflect.Value{}, err
+	}
+	left := true
+	switch cond.Kind() {
+	case reflect.Bool:
+		left = cond.Bool()
+	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int8, reflect.Int16:
+		left = cond.Int() != 0
+	case reflect.String:
+		left = cond.String() != ""
+	}
+	if left {
+		return evaluateExpr(scope, node.X)
+	}
+	return evaluateExpr(scope, node.Y)
+}
+
+func evaluateAdd(scope reflect.Value, left, right reflect.Value) (reflect.Value, error) {
+	switch left.Kind() {
+	case reflect.String:
+		switch right.Kind() {
+		case reflect.String:
+			return reflect.ValueOf(left.String() + right.String()), nil
+		default:
+			return reflect.Value{}, fmt.Errorf("unexpected right value %s", right.Kind().String())
+		}
+	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int8, reflect.Int16:
+		switch right.Kind() {
+		case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int8, reflect.Int16:
+			return reflect.ValueOf(left.Int() + right.Int()), nil
+		default:
+			return reflect.Value{}, fmt.Errorf("unexpected right value %s", right.Kind().String())
+		}
+	default:
+		return reflect.Value{}, fmt.Errorf("unexpected left value %s", left.String())
+	}
+}
+
+func evaluateOr(scope reflect.Value, left, right reflect.Value) (reflect.Value, error) {
+	switch left.Kind() {
+	case reflect.Bool:
+		if left.Bool() {
+			return left, nil
+		}
+		return right, nil
+	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int8, reflect.Int16:
+		if left.Int() != 0 {
+			return left, nil
+		}
+		return right, nil
+	case reflect.String:
+		if left.String() != "" {
+			return left, nil
+		}
+		return right, nil
+	case reflect.Invalid:
+		return right, nil
+	default:
+		return reflect.Value{}, fmt.Errorf("unexpected left value %s", left.String())
+	}
+}
+
+func evaluateStrictEqual(scope reflect.Value, left, right reflect.Value) (reflect.Value, error) {
+	switch left.Kind() {
+	case reflect.String:
+		switch right.Kind() {
+		case reflect.String:
+			return reflect.ValueOf(left.String() == right.String()), nil
+		default:
+			return reflect.Value{}, fmt.Errorf("unexpected right value %s", right.Kind().String())
+		}
+	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int8, reflect.Int16:
+		switch right.Kind() {
+		case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int8, reflect.Int16:
+			return reflect.ValueOf(left.Int() == right.Int()), nil
+		default:
+			return reflect.Value{}, fmt.Errorf("unexpected right value %s", right.Kind().String())
+		}
+	case reflect.Bool:
+		switch right.Kind() {
+		case reflect.Bool:
+			return reflect.ValueOf(left.Bool() == right.Bool()), nil
+		default:
+			return reflect.Value{}, fmt.Errorf("unexpected right value %s", right.Kind().String())
+		}
+	case reflect.Invalid:
+		switch right.Kind() {
+		case reflect.Invalid:
+			return reflect.ValueOf(true), nil
+		default:
+			return reflect.ValueOf(false), nil
+		}
+	default:
+		return reflect.Value{}, fmt.Errorf("unexpected left value %s", left.Kind().String())
+	}
+}
+
+func evaluateIdentifier(scope reflect.Value, node *js.LiteralExpr) (reflect.Value, error) {
+	// Handles nil
+	if !scope.IsValid() {
+		return reflect.Value{}, nil
+	}
+	switch scope.Kind() {
+	case reflect.Map:
+		value := scope.MapIndex(reflect.ValueOf(string(node.Data)))
+		return value, nil
+	default:
+		return reflect.Value{}, fmt.Errorf("unexpected scope type %s", scope.Kind().String())
+	}
+}
