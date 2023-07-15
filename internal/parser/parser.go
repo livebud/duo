@@ -6,6 +6,7 @@ import (
 	"github.com/livebud/duo/internal/ast"
 	"github.com/livebud/duo/internal/event"
 	"github.com/livebud/duo/internal/lexer"
+	"github.com/livebud/duo/internal/scope"
 	"github.com/livebud/duo/internal/token"
 	"github.com/tdewolff/parse/v2"
 	"github.com/tdewolff/parse/v2/js"
@@ -26,11 +27,12 @@ func Print(input string) string {
 }
 
 func New(l *lexer.Lexer) *Parser {
-	return &Parser{l: l}
+	return &Parser{l, scope.New()}
 }
 
 type Parser struct {
-	l *lexer.Lexer
+	l  *lexer.Lexer
+	sc *scope.Scope
 }
 
 func (p *Parser) Parse() (*ast.Document, error) {
@@ -38,11 +40,13 @@ func (p *Parser) Parse() (*ast.Document, error) {
 }
 
 func (p *Parser) unexpected() error {
-	return fmt.Errorf("unexpected token %s", p.l.Token.String())
+	return fmt.Errorf("parser: unexpected token %s", p.l.Token.String())
 }
 
 func (p *Parser) parseDocument() (*ast.Document, error) {
-	doc := new(ast.Document)
+	doc := &ast.Document{
+		Scope: p.sc,
+	}
 	for p.l.Next() {
 		child, err := p.parseFragment()
 		if err != nil {
@@ -303,7 +307,8 @@ func (p *Parser) parseExpression() (js.IExpr, error) {
 	if err != nil {
 		return nil, err
 	}
-	stmts := ast.BlockStmt.List
+	blockStmt := ast.BlockStmt
+	stmts := blockStmt.List
 	if len(stmts) != 1 {
 		return nil, fmt.Errorf("expected one statement, got %d", len(stmts))
 	}
@@ -311,6 +316,10 @@ func (p *Parser) parseExpression() (js.IExpr, error) {
 	es, ok := stmt.(*js.ExprStmt)
 	if !ok {
 		return nil, fmt.Errorf("expected expression statement, got %T", stmt)
+	}
+	// Walk the program to update scope
+	if err := p.walkBlockStatement(p.sc, blockStmt); err != nil {
+		return nil, err
 	}
 	return es.Value, nil
 }
@@ -342,6 +351,10 @@ openTag:
 	if err != nil {
 		return nil, err
 	}
+	// Walk the program to update scope
+	if err := p.walkBlockStatement(p.sc, program.BlockStmt); err != nil {
+		return nil, err
+	}
 	node.Program = program
 	p.l.Next()
 
@@ -367,4 +380,199 @@ openTag:
 		return nil, p.unexpected()
 	}
 	return node, nil
+}
+
+func (p *Parser) walkBlockStatement(sc *scope.Scope, node js.BlockStmt) error {
+	for _, stmt := range node.List {
+		if err := p.walkStmt(sc, stmt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Parser) walkStmt(sc *scope.Scope, node js.IStmt) error {
+	switch stmt := node.(type) {
+	case *js.VarDecl:
+		return p.walkVarDecl(sc, stmt)
+	case *js.ExportStmt:
+		return p.walkExportStmt(sc, stmt)
+	case *js.ExprStmt:
+		return p.walkExprStmt(sc, stmt)
+	case *js.FuncDecl:
+		return p.walkFuncDecl(sc, stmt)
+	case *js.ReturnStmt:
+		return p.walkReturnStmt(sc, stmt)
+	default:
+		return fmt.Errorf("parser: unexpected statement %T", stmt)
+	}
+}
+
+func (p *Parser) walkExprStmt(sc *scope.Scope, node *js.ExprStmt) error {
+	return p.walkExpr(sc, node.Value)
+}
+
+func (p *Parser) walkExportStmt(sc *scope.Scope, node *js.ExportStmt) error {
+	sc.IsExported = true
+	defer func() {
+		sc.IsExported = false
+	}()
+	if err := p.walkExpr(sc, node.Decl); err != nil {
+		return err
+	}
+	if len(node.List) > 0 {
+		return fmt.Errorf("parser: walk exported aliases not implemented yet")
+	}
+	return nil
+}
+
+func (p *Parser) walkFuncDecl(sc *scope.Scope, node *js.FuncDecl) error {
+	sc.IsDeclaration = true
+	defer func() { sc.IsDeclaration = false }()
+	if node.Name != nil {
+		if err := p.walkVar(sc, node.Name); err != nil {
+			return err
+		}
+	}
+	childScope := sc.New()
+	for _, param := range node.Params.List {
+		if err := p.walkBindingElement(childScope, param); err != nil {
+			return err
+		}
+	}
+	if err := p.walkBlockStatement(childScope, node.Body); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *Parser) walkExpr(sc *scope.Scope, node js.IExpr) error {
+	switch expr := node.(type) {
+	case *js.Var:
+		return p.walkVar(sc, expr)
+	case *js.VarDecl:
+		return p.walkVarDecl(sc, expr)
+	case *js.CallExpr:
+		return p.walkCallExpr(sc, expr)
+	case *js.BinaryExpr:
+		return p.walkBinaryExpr(sc, expr)
+	case *js.LiteralExpr:
+		return p.walkLiteralExpr(sc, expr)
+	case *js.CondExpr:
+		return p.walkCondExpr(sc, expr)
+	case *js.ArrowFunc:
+		return p.walkArrowFunc(sc, expr)
+	case *js.UnaryExpr:
+		return p.walkUnaryExpr(sc, expr)
+	default:
+		return fmt.Errorf("parser: unexpected expression %T", expr)
+	}
+}
+
+func (p *Parser) walkVarDecl(sc *scope.Scope, node *js.VarDecl) error {
+	sc.IsDeclaration = true
+	defer func() { sc.IsDeclaration = false }()
+	if node.TokenType == js.VarToken || node.TokenType == js.LetToken {
+		sc.IsMutable = true
+		defer func() { sc.IsMutable = false }()
+	}
+	for _, binding := range node.List {
+		if err := p.walkBindingElement(sc, binding); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Parser) walkBindingElement(sc *scope.Scope, node js.BindingElement) error {
+	if err := p.walkBinding(sc, node.Binding); err != nil {
+		return nil
+	}
+	if node.Default != nil {
+		if err := p.walkExpr(sc, node.Default); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Parser) walkBinding(sc *scope.Scope, node js.IBinding) error {
+	switch binding := node.(type) {
+	case *js.Var:
+		return p.walkVar(sc, binding)
+	default:
+		return fmt.Errorf("unexpected binding %T", binding)
+	}
+}
+
+func (p *Parser) walkBinaryExpr(sc *scope.Scope, node *js.BinaryExpr) error {
+	if err := p.walkExpr(sc, node.X); err != nil {
+		return err
+	}
+	if err := p.walkExpr(sc, node.Y); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *Parser) walkVar(sc *scope.Scope, node *js.Var) error {
+	name := string(node.Data)
+	sc.Use(name)
+	return nil
+}
+
+func (p *Parser) walkCondExpr(sc *scope.Scope, node *js.CondExpr) error {
+	if err := p.walkExpr(sc, node.Cond); err != nil {
+		return err
+	}
+	if err := p.walkExpr(sc, node.X); err != nil {
+		return err
+	}
+	if err := p.walkExpr(sc, node.Y); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *Parser) walkArrowFunc(sc *scope.Scope, node *js.ArrowFunc) error {
+	childScope := sc.New()
+	for _, param := range node.Params.List {
+		if err := p.walkBindingElement(childScope, param); err != nil {
+			return err
+		}
+	}
+	if err := p.walkBlockStatement(childScope, node.Body); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *Parser) walkUnaryExpr(sc *scope.Scope, node *js.UnaryExpr) error {
+	if err := p.walkExpr(sc, node.X); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *Parser) walkCallExpr(sc *scope.Scope, node *js.CallExpr) error {
+	if err := p.walkExpr(sc, node.X); err != nil {
+		return err
+	}
+	for _, arg := range node.Args.List {
+		if err := p.walkExpr(sc, arg.Value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Parser) walkReturnStmt(sc *scope.Scope, node *js.ReturnStmt) error {
+	if err := p.walkExpr(sc, node.Value); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *Parser) walkLiteralExpr(sc *scope.Scope, lit *js.LiteralExpr) error {
+	return nil
 }

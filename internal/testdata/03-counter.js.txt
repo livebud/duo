@@ -1,0 +1,1 @@
+export default function (h, proxy) { proxy.count = proxy.count || 0; function increment () { proxy.count += 1; }; return (props) => { return h("button", {onClick: increment}, ["\n  Clicked ", props.count || 0, " ", props.count === 1 ? 'time' : 'times', "\n"]); }; };

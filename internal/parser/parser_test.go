@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lithammer/dedent"
 	"github.com/livebud/duo/internal/parser"
 	"github.com/matthewmueller/diff"
 )
@@ -51,6 +52,40 @@ func equalFile(t *testing.T, name, expected string) {
 	equal(t, name, string(input), expected)
 }
 
+func equalScope(t *testing.T, name, expected string) {
+	t.Helper()
+	input, err := os.ReadFile(filepath.Join("..", "testdata", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ast, err := parser.Parse(string(input))
+	if err != nil {
+		if err.Error() == expected {
+			return
+		}
+	}
+	actual := strings.TrimSpace(ast.Scope.String())
+	expected = dedent.Dedent(expected)
+	expected = strings.TrimSpace(expected)
+	if actual == expected {
+		return
+	}
+	var b bytes.Buffer
+	b.WriteString("\n\x1b[4mInput\x1b[0m:\n")
+	b.Write(input)
+	b.WriteString("\n\n")
+	b.WriteString("\x1b[4mExpected\x1b[0m:\n")
+	b.WriteString(expected)
+	b.WriteString("\n\n")
+	b.WriteString("\x1b[4mActual\x1b[0m: \n")
+	b.WriteString(actual)
+	b.WriteString("\n\n")
+	b.WriteString("\x1b[4mDifference\x1b[0m: \n")
+	b.WriteString(diff.String(expected, actual))
+	b.WriteString("\n")
+	t.Fatal(b.String())
+}
+
 func Test(t *testing.T) {
 	equal(t, "simple", "<h1>hi</h1>", `<h1>hi</h1>`)
 	equal(t, "expr", "<h1>{greeting}</h1>", `<h1>{greeting}</h1>`)
@@ -84,4 +119,20 @@ func TestEventHandler(t *testing.T) {
 func TestFile(t *testing.T) {
 	equalFile(t, "01-greeting.html", `<script>export let greeting = "hello"; setInterval(() => { greeting += "o"; }, 500); </script><h1>{greeting}</h1>`)
 	equalFile(t, "02-attribute.html", `<div><hr {name} /><hr name="{name}" /><hr name="{name}" /><hr name="{target}-{name}" /><hr name="" /></div>`)
+	equalFile(t, "03-counter.html", `<script>export let count = 0; function increment () { count += 1; }; </script><button onClick={increment}>Clicked {count || 0} {count === 1 ? 'time' : 'times'}</button>`)
+}
+
+func TestScope(t *testing.T) {
+	equalScope(t, "01-greeting.html", `
+		"greeting" declared=true exported=true mutable=true
+		"setInterval" declared=false exported=false mutable=false
+	`)
+	equalScope(t, "02-attribute.html", `
+		"name" declared=false exported=false mutable=false
+		"target" declared=false exported=false mutable=false
+	`)
+	equalScope(t, "03-counter.html", `
+		"count" declared=true exported=true mutable=true
+		"increment" declared=true exported=false mutable=false
+	`)
 }

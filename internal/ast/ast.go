@@ -3,6 +3,7 @@ package ast
 import (
 	"strings"
 
+	"github.com/livebud/duo/internal/scope"
 	"github.com/tdewolff/parse/v2/js"
 )
 
@@ -21,6 +22,7 @@ var (
 
 type Document struct {
 	Children []Fragment
+	Scope    *scope.Scope
 }
 
 func (d *Document) Type() string { return "Document" }

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/livebud/duo/internal/ast"
+	"github.com/livebud/duo/internal/scope"
 	"github.com/tdewolff/parse/v2/js"
 )
 
@@ -18,17 +19,11 @@ func Generate(doc *ast.Document) (string, error) {
 }
 
 func Transform(doc *ast.Document) (*js.AST, error) {
-	s := &script{}
-	// Create a new for the script scope
-	scope := &js.Scope{}
-	hVar, ok := scope.Declare(js.ArgumentDecl, []byte("__h__"))
-	if !ok {
-		return nil, fmt.Errorf("transform: unable to declare __h__")
+	s := &script{
+		scope: doc.Scope,
 	}
-	proxyVar, ok := scope.Declare(js.ArgumentDecl, []byte("__proxy__"))
-	if !ok {
-		return nil, fmt.Errorf("transform: unable to declare __proxy__")
-	}
+	// New scope modification
+	scope := scope.New()
 	// Transform the document
 	if err := s.transformDocument(scope, doc); err != nil {
 		return nil, err
@@ -36,18 +31,12 @@ func Transform(doc *ast.Document) (*js.AST, error) {
 	// Create the program with imports, then default export with render function
 	var stmts []js.IStmt
 	stmts = append(stmts, s.imports...)
-	if len(s.vnodes) > 0 {
-		// Create the render function
-		// TODO: handle multiple top-level vnodes
-		returnStmt, err := toRenderFunction(scope, s.vnodes[0])
-		if err != nil {
-			return nil, err
-		}
-		s.stmts = append(s.stmts, returnStmt)
+	if s.render != nil {
+		s.stmts = append(s.stmts, s.render)
 	}
 	if len(s.stmts) > 0 {
 		// Create the default export
-		defaultExport, err := toDefaultExport(scope, hVar, proxyVar, s.stmts...)
+		defaultExport, err := toDefaultExport(scope, s.stmts...)
 		if err != nil {
 			return nil, err
 		}
@@ -61,24 +50,48 @@ func Transform(doc *ast.Document) (*js.AST, error) {
 }
 
 type script struct {
-	imports []js.IStmt
-	stmts   []js.IStmt
-	vnodes  []js.IExpr
+	scope    *scope.Scope
+	imports  []js.IStmt
+	stmts    []js.IStmt
+	render   js.IStmt
+	inScript bool // Set while traversing the script
 }
 
-func (s *script) transformDocument(scope *js.Scope, doc *ast.Document) error {
+// TODO: I think we can can clean this up a bunch, basically look for the script
+// first and transform that. Then introduce a new scope with props and transform
+// the fragments.
+func (s *script) transformDocument(scope *scope.Scope, doc *ast.Document) error {
+	hName := doc.Scope.FindFree("h")
+	proxyName := doc.Scope.FindFree("proxy")
+	if _, err := scope.Declare("h", hName); err != nil {
+		return err
+	}
+	if _, err := scope.Declare("proxy", proxyName); err != nil {
+		return err
+	}
 	for _, child := range doc.Children {
 		switch n := child.(type) {
 		case *ast.Script:
+			s.inScript = true
 			if err := s.transformScript(scope, n); err != nil {
+				s.inScript = false
 				return err
 			}
+			s.inScript = false
 		case *ast.Element:
-			vnode, err := generateFragment(scope, n)
+			childScope := scope.New()
+			propsName := childScope.FindFree("props")
+			if _, err := childScope.Declare("props", propsName); err != nil {
+				return err
+			}
+			vnode, err := s.generateFragment(childScope, n)
 			if err != nil {
 				return err
 			}
-			s.vnodes = append(s.vnodes, vnode)
+			s.render, err = s.toRenderFunction(childScope, vnode)
+			if err != nil {
+				return err
+			}
 		// Ignore any other types of nodes
 		default:
 			continue
@@ -87,20 +100,20 @@ func (s *script) transformDocument(scope *js.Scope, doc *ast.Document) error {
 	return nil
 }
 
-func generateFragment(scope *js.Scope, node ast.Fragment) (js.IExpr, error) {
+func (s *script) generateFragment(scope *scope.Scope, node ast.Fragment) (js.IExpr, error) {
 	switch n := node.(type) {
 	case *ast.Text:
-		return generateText(scope, n)
+		return s.generateText(scope, n)
 	case *ast.Element:
-		return generateElement(scope, n)
+		return s.generateElement(scope, n)
 	case *ast.Mustache:
-		return generateMustache(scope, n)
+		return s.generateMustache(scope, n)
 	default:
 		return nil, fmt.Errorf("unable to generate fragment %T", node)
 	}
 }
 
-func generateText(scope *js.Scope, node *ast.Text) (*js.LiteralExpr, error) {
+func (s *script) generateText(scope *scope.Scope, node *ast.Text) (*js.LiteralExpr, error) {
 	// TODO handle escaping & different types of text
 	return &js.LiteralExpr{
 		Data:      []byte(strconv.Quote(node.Value)),
@@ -108,14 +121,16 @@ func generateText(scope *js.Scope, node *ast.Text) (*js.LiteralExpr, error) {
 	}, nil
 }
 
-func generateElement(scope *js.Scope, node *ast.Element) (*js.CallExpr, error) {
+func (s *script) generateElement(scope *scope.Scope, node *ast.Element) (*js.CallExpr, error) {
 	// Create the element
-	element := createElement(scope, node.Name)
-
+	element, err := createElement(scope, node.Name)
+	if err != nil {
+		return nil, err
+	}
 	// Create the attributes
 	var attributes []js.Property
 	for _, attr := range node.Attributes {
-		attribute, err := generateAttribute(scope, attr)
+		attribute, err := s.generateAttribute(scope, attr)
 		if err != nil {
 			return nil, err
 		}
@@ -130,7 +145,7 @@ func generateElement(scope *js.Scope, node *ast.Element) (*js.CallExpr, error) {
 	// Create the children
 	var children []js.Element
 	for _, child := range node.Children {
-		child, err := generateFragment(scope, child)
+		child, err := s.generateFragment(scope, child)
 		if err != nil {
 			return nil, err
 		}
@@ -147,40 +162,39 @@ func generateElement(scope *js.Scope, node *ast.Element) (*js.CallExpr, error) {
 	return element, nil
 }
 
-func generateMustache(scope *js.Scope, node *ast.Mustache) (js.IExpr, error) {
-	return generateExpr(scope, node.Expr)
+func (s *script) generateMustache(scope *scope.Scope, node *ast.Mustache) (js.IExpr, error) {
+	return s.generateExpr(scope, node.Expr)
 }
 
-func generateExpr(scope *js.Scope, node js.IExpr) (js.IExpr, error) {
+func (s *script) generateExpr(scope *scope.Scope, node js.IExpr) (js.IExpr, error) {
 	switch n := node.(type) {
 	case *js.LiteralExpr:
 		return generateLiteralExpr(scope, n)
 	case *js.Var:
-		expr := rewriteVar(scope, "__props__", n)
-		return expr, nil
+		return s.rewriteVar(scope, n)
 	case *js.CondExpr:
-		return generateCondExpr(scope, n)
+		return s.generateCondExpr(scope, n)
 	case *js.BinaryExpr:
-		return generateBinaryExpr(scope, n)
+		return s.generateBinaryExpr(scope, n)
 	default:
 		return nil, fmt.Errorf("unable to generate expression for %T", n)
 	}
 }
 
-func generateLiteralExpr(scope *js.Scope, node *js.LiteralExpr) (js.IExpr, error) {
+func generateLiteralExpr(scope *scope.Scope, node *js.LiteralExpr) (js.IExpr, error) {
 	return node, nil
 }
 
-func generateCondExpr(scope *js.Scope, node *js.CondExpr) (js.IExpr, error) {
-	cond, err := generateExpr(scope, node.Cond)
+func (s *script) generateCondExpr(scope *scope.Scope, node *js.CondExpr) (js.IExpr, error) {
+	cond, err := s.generateExpr(scope, node.Cond)
 	if err != nil {
 		return nil, err
 	}
-	x, err := generateExpr(scope, node.X)
+	x, err := s.generateExpr(scope, node.X)
 	if err != nil {
 		return nil, err
 	}
-	y, err := generateExpr(scope, node.Y)
+	y, err := s.generateExpr(scope, node.Y)
 	if err != nil {
 		return nil, err
 	}
@@ -191,12 +205,12 @@ func generateCondExpr(scope *js.Scope, node *js.CondExpr) (js.IExpr, error) {
 	}, nil
 }
 
-func generateBinaryExpr(scope *js.Scope, node *js.BinaryExpr) (js.IExpr, error) {
-	x, err := generateExpr(scope, node.X)
+func (s *script) generateBinaryExpr(scope *scope.Scope, node *js.BinaryExpr) (js.IExpr, error) {
+	x, err := s.generateExpr(scope, node.X)
 	if err != nil {
 		return nil, err
 	}
-	y, err := generateExpr(scope, node.Y)
+	y, err := s.generateExpr(scope, node.Y)
 	if err != nil {
 		return nil, err
 	}
@@ -207,19 +221,19 @@ func generateBinaryExpr(scope *js.Scope, node *js.BinaryExpr) (js.IExpr, error) 
 	}, nil
 }
 
-func generateAttribute(scope *js.Scope, node ast.Attribute) (js.Property, error) {
+func (s *script) generateAttribute(scope *scope.Scope, node ast.Attribute) (js.Property, error) {
 	switch n := node.(type) {
 	case *ast.Field:
-		return generateField(scope, n)
+		return s.generateField(scope, n)
 	case *ast.AttributeShorthand:
-		return generateAttributeShorthand(scope, n)
+		return s.generateAttributeShorthand(scope, n)
 	default:
 		return js.Property{}, fmt.Errorf("unable to generate attribute %T", node)
 	}
 }
 
-func generateField(scope *js.Scope, node *ast.Field) (js.Property, error) {
-	values, err := generateValues(scope, node.Values)
+func (s *script) generateField(scope *scope.Scope, node *ast.Field) (js.Property, error) {
+	values, err := s.generateValues(scope, node.Values)
 	if err != nil {
 		return js.Property{}, err
 	}
@@ -231,21 +245,25 @@ func generateField(scope *js.Scope, node *ast.Field) (js.Property, error) {
 	}, nil
 }
 
-func generateAttributeShorthand(scope *js.Scope, node *ast.AttributeShorthand) (js.Property, error) {
+func (s *script) generateAttributeShorthand(scope *scope.Scope, node *ast.AttributeShorthand) (js.Property, error) {
+	value, err := s.rewriteVar(scope, &js.Var{
+		Data: []byte(node.Key),
+	})
+	if err != nil {
+		return js.Property{}, err
+	}
 	return js.Property{
 		Name: &js.PropertyName{
 			Literal: toIdentifier([]byte(node.Key)),
 		},
-		Value: rewriteVar(scope, "__props__", &js.Var{
-			Data: []byte(node.Key),
-		}),
+		Value: value,
 	}, nil
 }
 
-func generateValues(scope *js.Scope, values []ast.Value) ([]js.IExpr, error) {
+func (s *script) generateValues(scope *scope.Scope, values []ast.Value) ([]js.IExpr, error) {
 	var exprs []js.IExpr
 	for _, value := range values {
-		expr, err := generateValue(scope, value)
+		expr, err := s.generateValue(scope, value)
 		if err != nil {
 			return nil, err
 		}
@@ -254,21 +272,25 @@ func generateValues(scope *js.Scope, values []ast.Value) ([]js.IExpr, error) {
 	return exprs, nil
 }
 
-func generateValue(scope *js.Scope, value ast.Value) (js.IExpr, error) {
+func (s *script) generateValue(scope *scope.Scope, value ast.Value) (js.IExpr, error) {
 	switch n := value.(type) {
 	case *ast.Text:
-		return generateText(scope, n)
+		return s.generateText(scope, n)
 	case *ast.Mustache:
-		return generateMustache(scope, n)
+		return s.generateMustache(scope, n)
 	default:
 		return nil, fmt.Errorf("unable to generate value %T", value)
 	}
 }
 
 // Create `h('h1', { ... }, [ ... ])`
-func createElement(scope *js.Scope, name string) *js.CallExpr {
+func createElement(scope *scope.Scope, name string) (*js.CallExpr, error) {
+	h, err := scope.LookupByID("h")
+	if !err {
+		return nil, fmt.Errorf("transform: unable to lookup h in scope")
+	}
 	return &js.CallExpr{
-		X: scope.Use([]byte("__h__")),
+		X: h.ToVar(),
 		Args: js.Args{
 			List: []js.Arg{
 				{
@@ -279,7 +301,7 @@ func createElement(scope *js.Scope, name string) *js.CallExpr {
 				},
 			},
 		},
-	}
+	}, nil
 }
 
 func concat(values []js.IExpr) js.IExpr {
@@ -300,21 +322,20 @@ func concat(values []js.IExpr) js.IExpr {
 	}
 }
 
-func (s *script) transformScript(scope *js.Scope, node *ast.Script) error {
+func (s *script) transformScript(scope *scope.Scope, node *ast.Script) error {
 	return s.transformTopLevelBlockStmt(scope, &node.Program.BlockStmt)
 }
 
-func (s *script) transformTopLevelBlockStmt(scope *js.Scope, node *js.BlockStmt) error {
-	node.Scope.Parent = scope
+func (s *script) transformTopLevelBlockStmt(scope *scope.Scope, node *js.BlockStmt) error {
 	for _, stmt := range node.List {
-		if err := s.transformTopLevelStmt(&node.Scope, stmt); err != nil {
+		if err := s.transformTopLevelStmt(scope, stmt); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *script) transformTopLevelStmt(scope *js.Scope, node js.IStmt) error {
+func (s *script) transformTopLevelStmt(scope *scope.Scope, node js.IStmt) error {
 	switch stmt := node.(type) {
 	case *js.ImportStmt:
 		s.imports = append(s.imports, stmt)
@@ -324,7 +345,7 @@ func (s *script) transformTopLevelStmt(scope *js.Scope, node js.IStmt) error {
 	case *js.VarDecl:
 		return s.transformExportVarDecl(scope, stmt)
 	default:
-		if err := transformStmt(scope, stmt); err != nil {
+		if err := s.transformStmt(scope, stmt); err != nil {
 			return err
 		}
 		s.stmts = append(s.stmts, stmt)
@@ -332,28 +353,27 @@ func (s *script) transformTopLevelStmt(scope *js.Scope, node js.IStmt) error {
 	}
 }
 
-func transformBlockStmt(scope *js.Scope, node *js.BlockStmt) error {
-	node.Scope.Parent = scope
+func (s *script) transformBlockStmt(scope *scope.Scope, node *js.BlockStmt) error {
 	for _, stmt := range node.List {
-		if err := transformStmt(&node.Scope, stmt); err != nil {
+		if err := s.transformStmt(scope, stmt); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func transformStmt(scope *js.Scope, node js.IStmt) error {
+func (s *script) transformStmt(scope *scope.Scope, node js.IStmt) error {
 	switch stmt := node.(type) {
 	case *js.ExprStmt:
-		return transformExprStmt(scope, stmt)
+		return s.transformExprStmt(scope, stmt)
 	case *js.FuncDecl:
-		return transformFuncDecl(scope, stmt)
+		return s.transformFuncDecl(scope, stmt)
 	default:
 		return fmt.Errorf("unknown statement %T", stmt)
 	}
 }
 
-func (s *script) transformExportStmt(scope *js.Scope, node *js.ExportStmt) error {
+func (s *script) transformExportStmt(scope *scope.Scope, node *js.ExportStmt) error {
 	switch decl := node.Decl.(type) {
 	case *js.VarDecl:
 		return s.transformExportVarDecl(scope, decl)
@@ -362,7 +382,7 @@ func (s *script) transformExportStmt(scope *js.Scope, node *js.ExportStmt) error
 	}
 }
 
-func (s *script) transformExportVarDecl(scope *js.Scope, node *js.VarDecl) error {
+func (s *script) transformExportVarDecl(scope *scope.Scope, node *js.VarDecl) error {
 	// Ignore any exports that are not let or var
 	if node.TokenType != js.LetToken && node.TokenType != js.VarToken {
 		return nil
@@ -375,7 +395,7 @@ func (s *script) transformExportVarDecl(scope *js.Scope, node *js.VarDecl) error
 	return nil
 }
 
-func (s *script) transformExportBindingElement(scope *js.Scope, node *js.BindingElement) error {
+func (s *script) transformExportBindingElement(scope *scope.Scope, node *js.BindingElement) error {
 	// Spreads and empty lets are ignored (already passed in above)
 	if node.Binding == nil || node.Default == nil {
 		return nil
@@ -386,7 +406,10 @@ func (s *script) transformExportBindingElement(scope *js.Scope, node *js.Binding
 		return nil
 	}
 	// Rewrite `export let x = ...` to `__proxy__.x = __proxy__.x || ...`
-	dotExpr := rewriteVar(scope, "__proxy__", letVar)
+	dotExpr, err := s.rewriteVar(scope, letVar)
+	if err != nil {
+		return err
+	}
 	s.stmts = append(s.stmts, exprStmt(
 		assignExpr(
 			dotExpr,
@@ -396,69 +419,77 @@ func (s *script) transformExportBindingElement(scope *js.Scope, node *js.Binding
 	return nil
 }
 
-func transformExprStmt(scope *js.Scope, node *js.ExprStmt) error {
-	return transformExpr(scope, node.Value)
+func (s *script) transformExprStmt(scope *scope.Scope, node *js.ExprStmt) error {
+	return s.transformExpr(scope, node.Value)
 }
 
-func transformFuncDecl(scope *js.Scope, node *js.FuncDecl) error {
+func (s *script) transformFuncDecl(scope *scope.Scope, node *js.FuncDecl) error {
 	// TODO: this should be js.FunctionDecl, but that panics
-	if _, ok := scope.Declare(js.NoDecl, node.Name.Data); !ok {
-		return fmt.Errorf("transform: unable to declare %s", node.Name.Data)
-	}
-	return transformBlockStmt(scope, &node.Body)
+	// if _, ok := scope.Declare(js.NoDecl, node.Name.Data); !ok {
+	// 	return fmt.Errorf("transform: unable to declare %s", node.Name.Data)
+	// }
+	return s.transformBlockStmt(scope, &node.Body)
 }
 
-func transformCallExpr(scope *js.Scope, node *js.CallExpr) error {
-	if x, ok := node.X.(*js.Var); ok {
-		node.X = rewriteVar(scope, "__proxy__", x)
+func (s *script) transformCallExpr(scope *scope.Scope, node *js.CallExpr) error {
+	if variable, ok := node.X.(*js.Var); ok {
+		x, err := s.rewriteVar(scope, variable)
+		if err != nil {
+			return err
+		}
+		node.X = x
 	}
 	for _, arg := range node.Args.List {
-		if err := transformArg(scope, arg); err != nil {
+		if err := s.transformArg(scope, arg); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func transformArg(scope *js.Scope, arg js.Arg) error {
-	return transformExpr(scope, arg.Value)
+func (s *script) transformArg(scope *scope.Scope, arg js.Arg) error {
+	return s.transformExpr(scope, arg.Value)
 }
 
-func transformExpr(scope *js.Scope, node js.IExpr) error {
+func (s *script) transformExpr(scope *scope.Scope, node js.IExpr) error {
 	switch expr := node.(type) {
 	case *js.Var:
 		return transformVar(scope, expr)
 	case *js.CallExpr:
-		return transformCallExpr(scope, expr)
+		return s.transformCallExpr(scope, expr)
 	case *js.ArrowFunc:
-		return transformArrowFunc(scope, expr)
+		return s.transformArrowFunc(scope, expr)
 	case *js.BinaryExpr:
-		return transformBinaryExpr(scope, expr)
+		return s.transformBinaryExpr(scope, expr)
 	case *js.LiteralExpr:
-		return transformLiteralExpr(scope, expr)
+		return s.transformLiteralExpr(scope, expr)
 	default:
 		return fmt.Errorf("unknown expression %T", expr)
 	}
 }
 
-func transformVar(scope *js.Scope, node *js.Var) error {
+func transformVar(scope *scope.Scope, node *js.Var) error {
 	return nil
 }
 
-func transformArrowFunc(scope *js.Scope, node *js.ArrowFunc) error {
-	if err := transformBlockStmt(scope, &node.Body); err != nil {
+func (s *script) transformArrowFunc(scope *scope.Scope, node *js.ArrowFunc) error {
+	if err := s.transformBlockStmt(scope, &node.Body); err != nil {
 		return err
 	}
 	return nil
 }
 
-func transformLiteralExpr(scope *js.Scope, node *js.LiteralExpr) error {
+func (s *script) transformLiteralExpr(scope *scope.Scope, node *js.LiteralExpr) error {
 	return nil
 }
 
-func transformBinaryExpr(scope *js.Scope, node *js.BinaryExpr) error {
-	if x, ok := node.X.(*js.Var); ok {
-		node.X = rewriteVar(scope, "__proxy__", x)
+func (s *script) transformBinaryExpr(scope *scope.Scope, node *js.BinaryExpr) error {
+	if variable, ok := node.X.(*js.Var); ok {
+		x, err := s.rewriteVar(scope, variable)
+		if err != nil {
+			return err
+		}
+		node.X = x
 	}
 	return nil
 }
@@ -538,34 +569,67 @@ var globals = map[string]bool{
 	"Infinity":                  true,
 }
 
-func rewriteVar(scope *js.Scope, name string, v *js.Var) js.IExpr {
-	// TODO: handle scoping better
+func (s *script) rewriteVar(scope *scope.Scope, v *js.Var) (js.IExpr, error) {
+	// TODO: Handle global scoping better
 	if globals[string(v.Data)] {
-		return v
+		return v, nil
 	}
-	return &js.DotExpr{
-		X: scope.Use([]byte(name)),
-		Y: toIdentifier(v.Data),
+	// Find the symbol in the scope
+	sym, ok := s.scope.LookupByName(string(v.Data))
+	if !ok {
+		return nil, fmt.Errorf("transform: unable to find symbol %s", v.Data)
 	}
+	// Mutable variables in the script are re-written as proxy properties
+	if s.inScript && sym.IsMutable() {
+		proxy, err := scope.LookupByID("proxy")
+		if !err {
+			return nil, fmt.Errorf("transform: unable to find proxy in scope")
+		}
+		return &js.DotExpr{
+			X: proxy.ToVar(),
+			Y: toIdentifier(v.Data),
+		}, nil
+	}
+	// Mutable or undeclared variables in the template are re-written as props
+	// properties
+	if !s.inScript && (sym.IsMutable() || !sym.IsDeclared()) {
+		props, err := scope.LookupByID("props")
+		if !err {
+			return nil, fmt.Errorf("transform: unable to find props in scope to rewrite %q", v.Data)
+		}
+		return &js.DotExpr{
+			X: props.ToVar(),
+			Y: toIdentifier(v.Data),
+		}, nil
+	}
+	return v, nil
 }
 
-func toDefaultExport(scope *js.Scope, hVar, proxyVar *js.Var, body ...js.IStmt) (*js.ExportStmt, error) {
+func toDefaultExport(scope *scope.Scope, body ...js.IStmt) (*js.ExportStmt, error) {
+	h, ok := scope.LookupByID("h")
+	if !ok {
+		return nil, fmt.Errorf("transform: unable to lookup h in scope")
+	}
+	proxy, ok := scope.LookupByID("proxy")
+	if !ok {
+		return nil, fmt.Errorf("transform: unable to find proxy in scope")
+	}
 	return &js.ExportStmt{
 		Default: true,
 		Decl: &js.FuncDecl{
 			Params: js.Params{
 				List: []js.BindingElement{
 					{
-						Binding: hVar,
+						Binding: h.ToVar(),
 					},
 					{
-						Binding: proxyVar,
+						Binding: proxy.ToVar(),
 					},
 				},
 			},
 			Body: js.BlockStmt{
 				Scope: js.Scope{
-					Parent: scope,
+					Parent: &js.Scope{},
 				},
 				List: body,
 			},
@@ -573,26 +637,23 @@ func toDefaultExport(scope *js.Scope, hVar, proxyVar *js.Var, body ...js.IStmt) 
 	}, nil
 }
 
-func toRenderFunction(scope *js.Scope, expr js.IExpr) (js.IStmt, error) {
-	scope = &js.Scope{
-		Parent: scope,
-	}
-	propsVar, ok := scope.Declare(js.ArgumentDecl, []byte("__props__"))
+func (s *script) toRenderFunction(scope *scope.Scope, expr js.IExpr) (js.IStmt, error) {
+	props, ok := scope.LookupByID("props")
 	if !ok {
-		return nil, fmt.Errorf("transform: unable to declare __props__")
+		return nil, fmt.Errorf("transform: unable to find props in scope")
 	}
 	return &js.ReturnStmt{
 		Value: &js.ArrowFunc{
 			Params: js.Params{
 				List: []js.BindingElement{
 					{
-						Binding: propsVar,
+						Binding: props.ToVar(),
 					},
 				},
 			},
 			Body: js.BlockStmt{
 				Scope: js.Scope{
-					Parent: scope,
+					Parent: &js.Scope{},
 				},
 				List: []js.IStmt{
 					&js.ReturnStmt{
