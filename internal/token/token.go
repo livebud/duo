@@ -42,8 +42,6 @@ const (
 
 	Comment Type = "comment" // <!-- ... -->
 
-	Space Type = "space" // Any space character
-
 	Identifier       Type = "identifier"        // Any identifier
 	PascalIdentifier Type = "pascal_identifier" // Any identifier that starts with a upper case letter
 	ColonIdentifier  Type = "colon_identifier"  // Any identifier with a colon

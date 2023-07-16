@@ -105,6 +105,10 @@ func (l *Lexer) step() {
 	}
 }
 
+func (l *Lexer) ignore() {
+	l.start = l.end
+}
+
 func (l *Lexer) accept(cp rune, run ...rune) bool {
 	// Check the current rune
 	if l.cp != cp {
@@ -238,126 +242,136 @@ func textState(l *Lexer) (t token.Type) {
 }
 
 func startOpenTagState(l *Lexer) token.Type {
-	switch {
-	case l.cp == eof:
-		l.popState()
-		return l.unexpected()
-	case isAlpha(l.cp):
-		l.step()
-		for isAlphaNumeric(l.cp) || isDash(l.cp) {
+	for {
+
+		switch {
+		case l.cp == eof:
+			l.popState()
+			return l.unexpected()
+		case isAlpha(l.cp):
 			l.step()
-		}
-		l.popState()
-		l.pushState(middleTagState)
-		switch l.text() {
-		case "script":
-			l.inScript = true
-			return token.Script
-		case "style":
-			l.inStyle = true
-			return token.Style
-		}
-		return token.Identifier
-	case isSpace(l.cp):
-		l.step()
-		for isSpace(l.cp) && l.cp != eof {
+			for isAlphaNumeric(l.cp) || isDash(l.cp) {
+				l.step()
+			}
+			l.popState()
+			l.pushState(middleTagState)
+			switch l.text() {
+			case "script":
+				l.inScript = true
+				return token.Script
+			case "style":
+				l.inStyle = true
+				return token.Style
+			}
+			return token.Identifier
+		case isSpace(l.cp):
 			l.step()
+			for isSpace(l.cp) {
+				l.step()
+			}
+			l.ignore()
+			continue
+		default:
+			l.popState()
+			return l.unexpected()
 		}
-		return token.Space
-	default:
-		l.popState()
-		return l.unexpected()
 	}
 }
 
 func middleTagState(l *Lexer) (t token.Type) {
-	switch {
-	case l.cp == eof:
-		l.popState()
-		return l.unexpected()
-	case isAlpha(l.cp):
-		l.step()
-		for isAlphaNumeric(l.cp) || isDash(l.cp) {
+	for {
+		switch {
+		case l.cp == eof:
+			l.popState()
+			return l.unexpected()
+		case isAlpha(l.cp):
 			l.step()
-		}
-		return token.Identifier
-	case l.cp == '>':
-		l.step()
-		l.popState()
-		if l.inScript {
-			l.pushState(scriptState)
-		} else if l.inStyle {
-			l.pushState(styleState)
-		}
-		return token.GreaterThan
-	case l.cp == '/':
-		l.step()
-		if l.cp != '>' {
+			for isAlphaNumeric(l.cp) || isDash(l.cp) {
+				l.step()
+			}
+			return token.Identifier
+		case l.cp == '>':
+			l.step()
+			l.popState()
+			if l.inScript {
+				l.pushState(scriptState)
+			} else if l.inStyle {
+				l.pushState(styleState)
+			}
+			return token.GreaterThan
+		case l.cp == '/':
+			l.step()
+			if l.cp != '>' {
+				return l.unexpected()
+			}
+			l.step()
+			l.popState()
+			if l.inScript {
+				l.pushState(scriptState)
+			} else if l.inStyle {
+				l.pushState(styleState)
+			}
+			return token.SlashGreaterThan
+		case l.cp == '=':
+			l.step()
+			l.pushState(attributeState)
+			return token.Equal
+		case l.cp == '{':
+			l.step()
+			l.pushState(expressionState)
+			return token.LeftBrace
+		case isSpace(l.cp):
+			l.step()
+			for isSpace(l.cp) {
+				l.step()
+			}
+			l.ignore()
+			continue
+		default:
+			l.popState()
 			return l.unexpected()
 		}
-		l.step()
-		l.popState()
-		if l.inScript {
-			l.pushState(scriptState)
-		} else if l.inStyle {
-			l.pushState(styleState)
-		}
-		return token.SlashGreaterThan
-	case l.cp == '=':
-		l.step()
-		l.pushState(attributeState)
-		return token.Equal
-	case l.cp == '{':
-		l.step()
-		l.pushState(expressionState)
-		return token.LeftBrace
-	case isSpace(l.cp):
-		l.step()
-		for isSpace(l.cp) && l.cp != eof {
-			l.step()
-		}
-		return token.Space
-	default:
-		l.popState()
-		return l.unexpected()
 	}
 }
 
 func startCloseTagState(l *Lexer) token.Type {
-	switch {
-	case l.cp == eof:
-		l.popState()
-		return l.unexpected()
-	case l.cp == '/':
-		l.step()
-		return token.Slash
-	case isAlpha(l.cp):
-		l.step()
-		for isAlphaNumeric(l.cp) || isDash(l.cp) {
+	for {
+		switch {
+		case l.cp == eof:
+			l.popState()
+			return l.unexpected()
+		case l.cp == '/':
 			l.step()
-		}
-		switch l.text() {
-		case "script":
-			l.inScript = false
-			return token.Script
-		case "style":
-			l.inStyle = false
-			return token.Style
-		}
-		return token.Identifier
-	case l.cp == '>':
-		l.step()
-		l.popState()
-		return token.GreaterThan
-	case isSpace(l.cp):
-		l.step()
-		for isSpace(l.cp) && l.cp != eof {
+			return token.Slash
+		case isAlpha(l.cp):
 			l.step()
+			for isAlphaNumeric(l.cp) || isDash(l.cp) {
+				l.step()
+			}
+			switch l.text() {
+			case "script":
+				l.inScript = false
+				return token.Script
+			case "style":
+				l.inStyle = false
+				return token.Style
+			}
+			return token.Identifier
+		case l.cp == '>':
+			l.step()
+			l.popState()
+			return token.GreaterThan
+		case isSpace(l.cp):
+			l.step()
+			for isSpace(l.cp) && l.cp != eof {
+				l.step()
+			}
+			l.ignore()
+			continue
+		default:
+			l.popState()
+			return l.unexpected()
 		}
-		return token.Space
-	default:
-		l.popState()
-		return l.unexpected()
 	}
 }
 
@@ -535,35 +549,38 @@ func expressionState(l *Lexer) token.Type {
 }
 
 func doctypeState(l *Lexer) token.Type {
-	switch {
-	case l.cp == eof:
-		l.popState()
-		return l.unexpected()
-	case l.cp == '>':
-		l.step()
-		l.popState()
-		return token.GreaterThan
-	case l.cp == '/':
-		if l.accept('/', '>') {
+	for {
+		switch {
+		case l.cp == eof:
 			l.popState()
-			return token.SlashGreaterThan
-		}
-		return l.unexpected()
-	case isSpace(l.cp):
-		l.step()
-		for isSpace(l.cp) {
+			return l.unexpected()
+		case l.cp == '>':
 			l.step()
-		}
-		return token.Space
-	case isAlpha(l.cp):
-		l.step()
-		for isAlpha(l.cp) {
+			l.popState()
+			return token.GreaterThan
+		case l.cp == '/':
+			if l.accept('/', '>') {
+				l.popState()
+				return token.SlashGreaterThan
+			}
+			return l.unexpected()
+		case isSpace(l.cp):
 			l.step()
+			for isSpace(l.cp) {
+				l.step()
+			}
+			l.ignore()
+			continue
+		case isAlpha(l.cp):
+			l.step()
+			for isAlpha(l.cp) {
+				l.step()
+			}
+			return token.Identifier
+		default:
+			l.popState()
+			return l.unexpected()
 		}
-		return token.Identifier
-	default:
-		l.popState()
-		return l.unexpected()
 	}
 }
 

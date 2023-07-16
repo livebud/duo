@@ -97,9 +97,6 @@ func (p *Parser) parseElement() (*ast.Element, error) {
 openTag:
 	for p.l.Next() {
 		switch p.l.Token.Type {
-		// Skip over whitespace
-		case token.Space:
-			continue
 		case token.SlashGreaterThan:
 			node.SelfClosing = true
 			return node, nil
@@ -150,18 +147,12 @@ openTag:
 		return nil, p.unexpected("element")
 	}
 	p.l.Next()
-	for p.l.Token.Type == token.Space {
-		p.l.Next()
-	}
 	if p.l.Token.Type != token.Identifier {
 		return nil, p.unexpected("element")
 	} else if p.l.Token.Text != node.Name {
 		return nil, fmt.Errorf("expected closing tag %s, got %s", node.Name, p.l.Token.Text)
 	}
 	p.l.Next()
-	for p.l.Token.Type == token.Space {
-		p.l.Next()
-	}
 	if p.l.Token.Type != token.GreaterThan {
 		return nil, p.unexpected("element")
 	}
@@ -204,7 +195,7 @@ func (p *Parser) parseField(key string) (*ast.Field, error) {
 func (p *Parser) parseAttributeValues() (values []ast.Value, err error) {
 	for p.l.Next() {
 		switch p.l.Token.Type {
-		case token.Space, token.SlashGreaterThan, token.GreaterThan:
+		case token.SlashGreaterThan, token.GreaterThan:
 			return values, nil
 		case token.Quote:
 			return p.parseAttributeStringValues()
@@ -264,8 +255,6 @@ var errDoneBlock = errors.New("done block")
 func (p *Parser) parseBlockMustache() (ast.Fragment, error) {
 	for p.l.Next() {
 		switch p.l.Token.Type {
-		case token.Space:
-			continue
 		case token.Expr:
 			node := new(ast.Mustache)
 			expr, err := p.parseExpression()
@@ -308,9 +297,6 @@ func (p *Parser) parseMustache() (*ast.Mustache, error) {
 
 func (p *Parser) parseIfBlock(parseEnd bool) (*ast.IfBlock, error) {
 	node := new(ast.IfBlock)
-	for p.l.Token.Type == token.Space {
-		p.l.Next()
-	}
 	if p.l.Token.Type != token.Expr {
 		return nil, p.unexpected("if block")
 	}
@@ -461,9 +447,6 @@ func (p *Parser) parseScript() (*ast.Script, error) {
 openTag:
 	for p.l.Next() {
 		switch p.l.Token.Type {
-		// Skip over whitespace
-		case token.Space:
-			continue
 		case token.SlashGreaterThan:
 			return node, nil
 		case token.GreaterThan:
@@ -492,9 +475,6 @@ openTag:
 		return nil, p.unexpected("script")
 	}
 	p.l.Next()
-	for p.l.Token.Type == token.Space {
-		p.l.Next()
-	}
 	if p.l.Token.Type != token.Script {
 		return nil, p.unexpected("script")
 	}
@@ -502,9 +482,6 @@ openTag:
 		return nil, fmt.Errorf("expected closing tag %s, got %s", node.Name, p.l.Token.Text)
 	}
 	p.l.Next()
-	for p.l.Token.Type == token.Space {
-		p.l.Next()
-	}
 	if p.l.Token.Type != token.GreaterThan {
 		return nil, p.unexpected("script")
 	}
