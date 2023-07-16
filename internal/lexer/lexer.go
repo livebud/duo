@@ -450,39 +450,48 @@ func styleState(l *Lexer) token.Type {
 }
 
 func blockExpressionState(l *Lexer) token.Type {
-	switch l.cp {
-	case eof:
-		l.popState()
-		return l.unexpected()
-	case ' ':
-		l.step()
-		for l.cp == ' ' {
+	for {
+		switch l.cp {
+		case eof:
+			l.popState()
+			return l.unexpected()
+		case ' ':
 			l.step()
-		}
-		return token.Space
-	case 'i':
-		l.popState()
-		l.pushState(expressionState)
-		if l.accept('i', 'f', ' ') {
-			return token.If
-		}
-		return expressionState(l)
-	case 'e':
-		l.popState()
-		l.pushState(expressionState)
-		if l.accept('e', 'n', 'd') {
-			return token.End
-		} else if l.accept('e', 'l', 's', 'e') {
-			if l.accept(' ', 'i', 'f', ' ') {
-				return token.ElseIf
+			for l.cp == ' ' {
+				l.step()
 			}
-			return token.Else
+			continue
+			// return token.Space
+		case 'i':
+			l.popState()
+			l.pushState(expressionState)
+			if l.accept('i', 'f', ' ') {
+				return token.If
+			}
+			return expressionState(l)
+		case 'e':
+			l.popState()
+			l.pushState(expressionState)
+			if l.accept('e', 'n', 'd') {
+				for l.cp == ' ' {
+					l.step()
+				}
+				return token.End
+			} else if l.accept('e', 'l', 's', 'e') {
+				for l.cp == ' ' {
+					l.step()
+				}
+				if l.accept('i', 'f', ' ') {
+					return token.ElseIf
+				}
+				return token.Else
+			}
+			return expressionState(l)
+		default:
+			l.popState()
+			l.pushState(expressionState)
+			return expressionState(l)
 		}
-		return expressionState(l)
-	default:
-		l.popState()
-		l.pushState(expressionState)
-		return expressionState(l)
 	}
 }
 
@@ -500,7 +509,7 @@ func expressionState(l *Lexer) token.Type {
 			for l.cp == ' ' {
 				l.step()
 			}
-			return token.Space
+			// return token.Space
 		default:
 			// Handle inner right brace } characters
 			depth := 1

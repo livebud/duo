@@ -324,15 +324,9 @@ func (p *Parser) parseIfBlock(parseEnd bool) (*ast.IfBlock, error) {
 		return nil, p.unexpected("if block")
 	}
 	for p.l.Next() {
-		for p.l.Token.Type == token.Space {
-			p.l.Next()
-		}
 		switch p.l.Token.Type {
 		case token.LeftBrace:
 			p.l.Next()
-			for p.l.Token.Type == token.Space {
-				p.l.Next()
-			}
 			switch p.l.Token.Type {
 			case token.Expr:
 				mustache := new(ast.Mustache)
@@ -369,9 +363,6 @@ func (p *Parser) parseIfBlock(parseEnd bool) (*ast.IfBlock, error) {
 				node.Else = append(node.Else, ifBlock)
 			case token.Else:
 				p.l.Next()
-				for p.l.Token.Type == token.Space {
-					p.l.Next()
-				}
 				if p.l.Token.Type != token.RightBrace {
 					return nil, p.unexpected("if block")
 				}
@@ -406,13 +397,8 @@ func (p *Parser) parseIfBlock(parseEnd bool) (*ast.IfBlock, error) {
 	return nil, fmt.Errorf("unclosed if block")
 }
 
-// func (p *Parser) parseIfBlock() (*ast.IfBlock, error) {
-
 func (p *Parser) parseEnd() error {
 	p.l.Next()
-	for p.l.Token.Type == token.Space {
-		p.l.Next()
-	}
 	if p.l.Token.Type != token.RightBrace {
 		return p.unexpected("end")
 	}
