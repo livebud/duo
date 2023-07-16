@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/livebud/duo/internal/ast"
@@ -39,8 +40,8 @@ func (p *Parser) Parse() (*ast.Document, error) {
 	return p.parseDocument()
 }
 
-func (p *Parser) unexpected() error {
-	return fmt.Errorf("parser: unexpected token %s", p.l.Token.String())
+func (p *Parser) unexpected(prefix string) error {
+	return fmt.Errorf("parser: %s unexpected token %s (%d:%d)", prefix, p.l.Token.String(), p.l.Token.Line, p.l.Token.Start)
 }
 
 func (p *Parser) parseDocument() (*ast.Document, error) {
@@ -64,9 +65,9 @@ func (p *Parser) parseFragment() (ast.Fragment, error) {
 	case token.LessThan:
 		return p.parseTag()
 	case token.LeftBrace:
-		return p.parseMustache()
+		return p.parseBlockMustache()
 	default:
-		return nil, p.unexpected()
+		return nil, p.unexpected("fragment")
 	}
 }
 
@@ -84,7 +85,7 @@ func (p *Parser) parseTag() (ast.Fragment, error) {
 	case token.Script:
 		return p.parseScript()
 	default:
-		return nil, p.unexpected()
+		return nil, p.unexpected("tag")
 	}
 }
 
@@ -131,7 +132,7 @@ openTag:
 				return node, nil
 			}
 		default:
-			return nil, p.unexpected()
+			return nil, p.unexpected("element")
 		}
 	}
 
@@ -146,14 +147,14 @@ openTag:
 	}
 
 	if p.l.Token.Type != token.LessThanSlash {
-		return nil, p.unexpected()
+		return nil, p.unexpected("element")
 	}
 	p.l.Next()
 	for p.l.Token.Type == token.Space {
 		p.l.Next()
 	}
 	if p.l.Token.Type != token.Identifier {
-		return nil, p.unexpected()
+		return nil, p.unexpected("element")
 	} else if p.l.Token.Text != node.Name {
 		return nil, fmt.Errorf("expected closing tag %s, got %s", node.Name, p.l.Token.Text)
 	}
@@ -162,7 +163,7 @@ openTag:
 		p.l.Next()
 	}
 	if p.l.Token.Type != token.GreaterThan {
-		return nil, p.unexpected()
+		return nil, p.unexpected("element")
 	}
 	return node, nil
 }
@@ -194,7 +195,7 @@ func (p *Parser) parseField(key string) (*ast.Field, error) {
 			field.Values = values
 			return field, nil
 		default:
-			return nil, p.unexpected()
+			return nil, p.unexpected("field")
 		}
 	}
 	return field, nil
@@ -218,7 +219,7 @@ func (p *Parser) parseAttributeValues() (values []ast.Value, err error) {
 			}
 			values = append(values, mustache)
 		default:
-			return nil, p.unexpected()
+			return nil, p.unexpected("attribute value")
 		}
 	}
 	return values, nil
@@ -240,10 +241,10 @@ func (p *Parser) parseAttributeStringValues() (values []ast.Value, err error) {
 			}
 			values = append(values, mustache)
 		default:
-			return nil, p.unexpected()
+			return nil, p.unexpected("attribute value")
 		}
 	}
-	return nil, p.unexpected()
+	return nil, p.unexpected("attribute value")
 }
 
 func (p *Parser) parseEventValue() (value ast.Value, err error) {
@@ -252,17 +253,46 @@ func (p *Parser) parseEventValue() (value ast.Value, err error) {
 		case token.LeftBrace:
 			return p.parseMustache()
 		default:
-			return nil, p.unexpected()
+			return nil, p.unexpected("event value")
 		}
 	}
-	return nil, p.unexpected()
+	return nil, p.unexpected("event value")
+}
+
+var errDoneBlock = errors.New("done block")
+
+func (p *Parser) parseBlockMustache() (ast.Fragment, error) {
+	for p.l.Next() {
+		switch p.l.Token.Type {
+		case token.Space:
+			continue
+		case token.Expr:
+			node := new(ast.Mustache)
+			expr, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			node.Expr = expr
+			p.l.Next()
+			if p.l.Token.Type != token.RightBrace {
+				return nil, p.unexpected("mustache")
+			}
+			return node, nil
+		case token.If:
+			p.l.Next()
+			return p.parseIfBlock(true)
+		default:
+			return nil, p.unexpected("mustache")
+		}
+	}
+	return nil, p.unexpected("mustache")
 }
 
 func (p *Parser) parseMustache() (*ast.Mustache, error) {
 	node := new(ast.Mustache)
 	p.l.Next()
 	if p.l.Token.Type != token.Expr {
-		return nil, p.unexpected()
+		return nil, p.unexpected("mustache")
 	}
 	expr, err := p.parseExpression()
 	if err != nil {
@@ -271,16 +301,129 @@ func (p *Parser) parseMustache() (*ast.Mustache, error) {
 	node.Expr = expr
 	p.l.Next()
 	if p.l.Token.Type != token.RightBrace {
-		return nil, p.unexpected()
+		return nil, p.unexpected("mustache")
 	}
 	return node, nil
+}
+
+func (p *Parser) parseIfBlock(parseEnd bool) (*ast.IfBlock, error) {
+	node := new(ast.IfBlock)
+	for p.l.Token.Type == token.Space {
+		p.l.Next()
+	}
+	if p.l.Token.Type != token.Expr {
+		return nil, p.unexpected("if block")
+	}
+	expr, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+	node.Cond = expr
+	p.l.Next()
+	if p.l.Token.Type != token.RightBrace {
+		return nil, p.unexpected("if block")
+	}
+	for p.l.Next() {
+		for p.l.Token.Type == token.Space {
+			p.l.Next()
+		}
+		switch p.l.Token.Type {
+		case token.LeftBrace:
+			p.l.Next()
+			for p.l.Token.Type == token.Space {
+				p.l.Next()
+			}
+			switch p.l.Token.Type {
+			case token.Expr:
+				mustache := new(ast.Mustache)
+				expr, err := p.parseExpression()
+				if err != nil {
+					return nil, err
+				}
+				mustache.Expr = expr
+				p.l.Next()
+				if p.l.Token.Type != token.RightBrace {
+					return nil, p.unexpected("if block")
+				}
+				node.Then = append(node.Then, mustache)
+			case token.End:
+				if parseEnd {
+					if err := p.parseEnd(); err != nil {
+						return nil, err
+					}
+				}
+				return node, nil
+			case token.If:
+				p.l.Next()
+				ifBlock, err := p.parseIfBlock(true)
+				if err != nil {
+					return nil, err
+				}
+				node.Then = append(node.Then, ifBlock)
+			case token.ElseIf:
+				p.l.Next()
+				ifBlock, err := p.parseIfBlock(false)
+				if err != nil {
+					return nil, err
+				}
+				node.Else = append(node.Else, ifBlock)
+			case token.Else:
+				p.l.Next()
+				for p.l.Token.Type == token.Space {
+					p.l.Next()
+				}
+				if p.l.Token.Type != token.RightBrace {
+					return nil, p.unexpected("if block")
+				}
+				p.l.Next()
+				fragment, err := p.parseFragment()
+				if err != nil {
+					if err != errDoneBlock {
+						return nil, err
+					}
+					return node, nil
+				}
+				node.Else = append(node.Else, fragment)
+			default:
+				return nil, p.unexpected("if block")
+			}
+		// This is meant to be the right brace of an {end}
+		// TODO: simplify
+		case token.RightBrace:
+			p.l.Next()
+			return node, nil
+		default:
+			fragment, err := p.parseFragment()
+			if err != nil {
+				if err != errDoneBlock {
+					return nil, err
+				}
+				return node, nil
+			}
+			node.Then = append(node.Then, fragment)
+		}
+	}
+	return nil, fmt.Errorf("unclosed if block")
+}
+
+// func (p *Parser) parseIfBlock() (*ast.IfBlock, error) {
+
+func (p *Parser) parseEnd() error {
+	p.l.Next()
+	for p.l.Token.Type == token.Space {
+		p.l.Next()
+	}
+	if p.l.Token.Type != token.RightBrace {
+		return p.unexpected("end")
+	}
+	return nil
 }
 
 func (p *Parser) parseAttributeShorthand() (ast.Attribute, error) {
 	node := new(ast.AttributeShorthand)
 	p.l.Next()
 	if p.l.Token.Type != token.Expr {
-		return nil, p.unexpected()
+		return nil, p.unexpected("attribute shorthand")
 	}
 	expr, err := p.parseExpression()
 	if err != nil {
@@ -295,7 +438,7 @@ func (p *Parser) parseAttributeShorthand() (ast.Attribute, error) {
 	node.EventHandler = event.Is(name)
 	p.l.Next()
 	if p.l.Token.Type != token.RightBrace {
-		return nil, p.unexpected()
+		return nil, p.unexpected("attribute shorthand")
 	}
 	return node, nil
 }
@@ -341,7 +484,7 @@ openTag:
 			break openTag
 		// TODO: handle attributes
 		default:
-			return nil, p.unexpected()
+			return nil, p.unexpected("script")
 		}
 	}
 
@@ -360,14 +503,14 @@ openTag:
 
 	// Closing tag
 	if p.l.Token.Type != token.LessThanSlash {
-		return nil, p.unexpected()
+		return nil, p.unexpected("script")
 	}
 	p.l.Next()
 	for p.l.Token.Type == token.Space {
 		p.l.Next()
 	}
 	if p.l.Token.Type != token.Script {
-		return nil, p.unexpected()
+		return nil, p.unexpected("script")
 	}
 	if p.l.Token.Text != node.Name {
 		return nil, fmt.Errorf("expected closing tag %s, got %s", node.Name, p.l.Token.Text)
@@ -377,7 +520,7 @@ openTag:
 		p.l.Next()
 	}
 	if p.l.Token.Type != token.GreaterThan {
-		return nil, p.unexpected()
+		return nil, p.unexpected("script")
 	}
 	return node, nil
 }
@@ -464,6 +607,8 @@ func (p *Parser) walkExpr(sc *scope.Scope, node js.IExpr) error {
 		return p.walkArrowFunc(sc, expr)
 	case *js.UnaryExpr:
 		return p.walkUnaryExpr(sc, expr)
+	case *js.GroupExpr:
+		return p.walkGroupExpr(sc, expr)
 	default:
 		return fmt.Errorf("parser: unexpected expression %T", expr)
 	}
@@ -548,6 +693,13 @@ func (p *Parser) walkArrowFunc(sc *scope.Scope, node *js.ArrowFunc) error {
 }
 
 func (p *Parser) walkUnaryExpr(sc *scope.Scope, node *js.UnaryExpr) error {
+	if err := p.walkExpr(sc, node.X); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *Parser) walkGroupExpr(sc *scope.Scope, node *js.GroupExpr) error {
 	if err := p.walkExpr(sc, node.X); err != nil {
 		return err
 	}

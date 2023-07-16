@@ -100,6 +100,7 @@ func TestExpression(t *testing.T) {
 	equal(t, "attribute expression", `<hr class="hi-{name}-world"/>`, `< identifier:"hr" space:" " identifier:"class" = quote:"\"" text:"hi-" { expr:"name" } text:"-world" quote:"\"" />`)
 	equal(t, "attribute expression", "<hr {class} />", `< identifier:"hr" space:" " { expr:"class" } space:" " />`)
 	equal(t, "attribute expression", "<hr data-set={set} />", `< identifier:"hr" space:" " identifier:"data-set" = { expr:"set" } space:" " />`)
+	equal(t, "i expr", "{i}", `{ expr:"i" }`)
 }
 
 func TestDoctype(t *testing.T) {
@@ -121,4 +122,20 @@ func TestEventHandler(t *testing.T) {
 	equal(t, "", "<button onMouseOut={() => count++}>+</button>", `< identifier:"button" space:" " identifier:"onMouseOut" = { expr:"() => count++" } > text:"+" </ identifier:"button" >`)
 	equal(t, "", "<button onClick={increment} onDragStart={() => count++}>+</button>", `< identifier:"button" space:" " identifier:"onClick" = { expr:"increment" } space:" " identifier:"onDragStart" = { expr:"() => count++" } > text:"+" </ identifier:"button" >`)
 	equal(t, "", "<button {onClick} {onDragStart}>+</button>", `< identifier:"button" space:" " { expr:"onClick" } space:" " { expr:"onDragStart" } > text:"+" </ identifier:"button" >`)
+}
+
+func TestIfStatement(t *testing.T) {
+	equal(t, "", "{if x}{x}{end}", `{ if:"if " expr:"x" } { expr:"x" } { end }`)
+	equal(t, "", "{if x}\n{x}\n{end}", `{ if:"if " expr:"x" } text:"\n" { expr:"x" } text:"\n" { end }`)
+	equal(t, "", "{if x > 10}{x}{end}", `{ if:"if " expr:"x > 10" } { expr:"x" } { end }`)
+	equal(t, "", "{if (x > 10)}{x}{end}", `{ if:"if " expr:"(x > 10)" } { expr:"x" } { end }`)
+	equal(t, "", "{  if x > 10   }{  x   }{   end   }", `{ space:"  " if:"if " expr:"x > 10   " } { space:"  " expr:"x   " } { space:"   " end space:"   " }`)
+	equal(t, "", "{if x}{x}{else if y}{y}{end}", `{ if:"if " expr:"x" } { expr:"x" } { else_if:"else if " expr:"y" } { expr:"y" } { end }`)
+	equal(t, "", "{if x}{x}{else if (y)}{y}{end}", `{ if:"if " expr:"x" } { expr:"x" } { else_if:"else if " expr:"(y)" } { expr:"y" } { end }`)
+	equal(t, "", "{if x}\n{x}\n{else if y}\n{y}\n{end}", `{ if:"if " expr:"x" } text:"\n" { expr:"x" } text:"\n" { else_if:"else if " expr:"y" } text:"\n" { expr:"y" } text:"\n" { end }`)
+	equal(t, "", "{   if x   }{x}{    else if y  }{y}{   end  }", `{ space:"   " if:"if " expr:"x   " } { expr:"x" } { space:"    " else_if:"else if " expr:"y  " } { expr:"y" } { space:"   " end space:"  " }`)
+	equal(t, "", "{if x == 10}{x}{else if y > 10}{y}{end}", `{ if:"if " expr:"x == 10" } { expr:"x" } { else_if:"else if " expr:"y > 10" } { expr:"y" } { end }`)
+	equal(t, "", "{if x == 10}{x}{else if (y > 10)}{y}{end}", `{ if:"if " expr:"x == 10" } { expr:"x" } { else_if:"else if " expr:"(y > 10)" } { expr:"y" } { end }`)
+	equal(t, "", "{if x == 10}{x}{else if y > 10}{y}{else}none{end}", `{ if:"if " expr:"x == 10" } { expr:"x" } { else_if:"else if " expr:"y > 10" } { expr:"y" } { else } text:"none" { end }`)
+	equal(t, "", "{if x}{x}{else}{y}{end}", `{ if:"if " expr:"x" } { expr:"x" } { else } { expr:"y" } { end }`)
 }

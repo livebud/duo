@@ -18,6 +18,7 @@ var (
 	_ Node = (*Mustache)(nil)
 	_ Node = (*Text)(nil)
 	_ Node = (*Comment)(nil)
+	_ Node = (*IfBlock)(nil)
 )
 
 type Document struct {
@@ -51,6 +52,7 @@ var (
 	_ Fragment = (*Text)(nil)
 	_ Fragment = (*Mustache)(nil)
 	_ Fragment = (*Comment)(nil)
+	_ Fragment = (*IfBlock)(nil)
 )
 
 type ElementKind int8
@@ -229,4 +231,36 @@ func (c *Comment) Type() string { return "Comment" }
 
 func (c *Comment) print(indent string) string {
 	return ""
+}
+
+type IfBlock struct {
+	Cond js.IExpr
+	Then []Fragment
+	Else []Fragment
+}
+
+func (i *IfBlock) fragment() {}
+
+func (i *IfBlock) Type() string { return "IfBlock" }
+
+func (i *IfBlock) print(indent string) string {
+	out := new(strings.Builder)
+	out.WriteString(indent)
+	out.WriteString("{if ")
+	out.WriteString(i.Cond.JS())
+	out.WriteString("}")
+	for _, child := range i.Then {
+		out.WriteString(child.print(indent + "\t"))
+		out.WriteByte('\n')
+	}
+	if len(i.Else) > 0 {
+		out.WriteString("{else}")
+		for _, child := range i.Else {
+			out.WriteString(child.print(indent + "\t"))
+			out.WriteByte('\n')
+		}
+	}
+	out.WriteString(indent)
+	out.WriteString("{end}")
+	return out.String()
 }

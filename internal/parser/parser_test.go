@@ -89,6 +89,7 @@ func equalScope(t *testing.T, name, expected string) {
 func Test(t *testing.T) {
 	equal(t, "simple", "<h1>hi</h1>", `<h1>hi</h1>`)
 	equal(t, "expr", "<h1>{greeting}</h1>", `<h1>{greeting}</h1>`)
+	equal(t, "expr", "<h1>{ greeting }</h1>", `<h1>{greeting}</h1>`)
 	equal(t, "self-closing", "<hr/>", `<hr />`)
 	equal(t, "self-closing with space", "<hr   />", `<hr />`)
 	equal(t, "attribute", `<h1 class="hello">{greeting}</h1>`, `<h1 class="hello">{greeting}</h1>`)
@@ -114,6 +115,24 @@ func TestEventHandler(t *testing.T) {
 	equal(t, "", "<button onMouseOut={() => count++}>+</button>", `<button onMouseOut={() => { return count++; }}>+</button>`)
 	equal(t, "", "<button onClick={increment} onDragStart={() => count++}>+</button>", `<button onClick={increment} onDragStart={() => { return count++; }}>+</button>`)
 	equal(t, "", "<button {onClick} {onDragStart}>+</button>", `<button {onClick} {onDragStart}>+</button>`)
+}
+
+func TestIfStatement(t *testing.T) {
+	equal(t, "", "{if x}{x}{end}", `{if x}{x}{end}`)
+	equal(t, "", "{if x}{if y}{y}{end}{x}{end}", `{if x}{if y}{y}{end}{x}{end}`)
+	equal(t, "", "{if x}\n{x}\n{end}", `{if x}{x}{end}`)
+	equal(t, "", "{if x > 10}{x}{end}", `{if x > 10}{x}{end}`)
+	equal(t, "", "{if (x > 10)}{x}{end}", `{if (x > 10)}{x}{end}`)
+	equal(t, "", "{  if x > 10   }{  x    }{   end   }", `{if x > 10}{x}{end}`)
+	equal(t, "", "{if x}{x}{else if y}{y}{end}", `{if x}{x}{else}{if y}{y}{end}{end}`)
+	equal(t, "", "{if x}{x}{else if (y)}{y}{end}", `{if x}{x}{else}{if (y)}{y}{end}{end}`)
+	equal(t, "", "{if x}\n{x}\n{else if y}\n{y}\n{end}", `{if x}{x}{else}{if y}{y}{end}{end}`)
+	equal(t, "", "{   if x   }{x}{    else if y  }{y}{   end  }", `{if x}{x}{else}{if y}{y}{end}{end}`)
+	equal(t, "", "{if x == 10}{x}{else if y > 10}{y}{end}", `{if x == 10}{x}{else}{if y > 10}{y}{end}{end}`)
+	equal(t, "", "{if x == 10}{x}{else if (y > 10)}{y}{end}", `{if x == 10}{x}{else}{if (y > 10)}{y}{end}{end}`)
+	equal(t, "", "{if x == 10}{x}{else if y > 10}{y}{else}none{end}", `{if x == 10}{x}{else}{if y > 10}{y}{else}none{end}{end}`)
+	equal(t, "", "{if x}{x}{else   }{y}{end}", `{if x}{x}{else}{y}{end}`)
+	equal(t, "", "{if x}{x}{else}{y}{end}", `{if x}{x}{else}{y}{end}`)
 }
 
 func TestFile(t *testing.T) {

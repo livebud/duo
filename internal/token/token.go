@@ -25,7 +25,7 @@ func (t *Token) String() string {
 }
 
 const (
-	End              Type = "end"
+	EOF              Type = "eof"
 	Error            Type = "error"
 	LessThan         Type = "<"  // <
 	GreaterThan      Type = ">"  // >
@@ -58,14 +58,10 @@ const (
 	LeftBrace  Type = "{" // {
 	RightBrace Type = "}" // }
 
-	// OpenParen  Type = "(" // (
-	// CloseParen Type = ")" // )
-
-	// OpenCurlyHash  Type = "{#" // {#
-	// OpenCurlyColon Type = "{:" // {:
-	// OpenCurlySlash Type = "{/" // {/
+	If     Type = "if"      // if
+	ElseIf Type = "else_if" // elseif
+	Else   Type = "else"    // else
+	End    Type = "end"     // end
 
 	Quote Type = "quote" // " or '
-
-	// Pipe Type = "|" // |
 )

@@ -50,26 +50,43 @@ type Lexer struct {
 	err   string      // Error message for an error token
 
 	states []state // Stack of states
+	peaked []token.Token
 
 	inScript bool
 	inStyle  bool
 }
 
-func (l *Lexer) Next() bool {
+func (l *Lexer) nextToken() token.Token {
 	l.start = l.end
 	tokenType := l.states[len(l.states)-1](l)
-	l.Token = token.Token{
+	t := token.Token{
 		Type:  tokenType,
 		Start: l.start,
 		Text:  l.input[l.start:l.end],
 		Line:  l.line,
 	}
 	if tokenType == token.Error {
-		l.Token.Text = l.err
+		t.Text = l.err
 		l.err = ""
 	}
-	return tokenType != token.End
+	return t
 }
+
+func (l *Lexer) Next() bool {
+	if len(l.peaked) > 0 {
+		l.Token = l.peaked[0]
+		l.peaked = l.peaked[1:]
+	} else {
+		l.Token = l.nextToken()
+	}
+	return l.Token.Type != token.EOF
+}
+
+// func (l *Lexer) Peak() token.Token {
+// 	token := l.nextToken()
+// 	l.peaked = append(l.peaked, token)
+// 	return token
+// }
 
 // Use -1 to indicate the end of the file
 const eof = -1
@@ -181,7 +198,7 @@ func (l *Lexer) unexpected() token.Type {
 func textState(l *Lexer) (t token.Type) {
 	switch l.cp {
 	case eof:
-		return token.End
+		return token.EOF
 	case '<':
 		l.step()
 		switch {
@@ -209,7 +226,7 @@ func textState(l *Lexer) (t token.Type) {
 		return token.LessThan
 	case '{':
 		l.step()
-		l.pushState(expressionState)
+		l.pushState(blockExpressionState)
 		return token.LeftBrace
 	default:
 		l.step()
@@ -432,6 +449,43 @@ func styleState(l *Lexer) token.Type {
 	}
 }
 
+func blockExpressionState(l *Lexer) token.Type {
+	switch l.cp {
+	case eof:
+		l.popState()
+		return l.unexpected()
+	case ' ':
+		l.step()
+		for l.cp == ' ' {
+			l.step()
+		}
+		return token.Space
+	case 'i':
+		l.popState()
+		l.pushState(expressionState)
+		if l.accept('i', 'f', ' ') {
+			return token.If
+		}
+		return expressionState(l)
+	case 'e':
+		l.popState()
+		l.pushState(expressionState)
+		if l.accept('e', 'n', 'd') {
+			return token.End
+		} else if l.accept('e', 'l', 's', 'e') {
+			if l.accept(' ', 'i', 'f', ' ') {
+				return token.ElseIf
+			}
+			return token.Else
+		}
+		return expressionState(l)
+	default:
+		l.popState()
+		l.pushState(expressionState)
+		return expressionState(l)
+	}
+}
+
 func expressionState(l *Lexer) token.Type {
 	for {
 		switch l.cp {
@@ -441,6 +495,12 @@ func expressionState(l *Lexer) token.Type {
 			l.step()
 			l.popState()
 			return token.RightBrace
+		case ' ':
+			l.step()
+			for l.cp == ' ' {
+				l.step()
+			}
+			return token.Space
 		default:
 			// Handle inner right brace } characters
 			depth := 1
