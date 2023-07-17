@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/livebud/duo/internal/ast"
@@ -40,6 +39,7 @@ func (p *Parser) Parse() (*ast.Document, error) {
 	return p.parseDocument()
 }
 
+// TODO: this needs to be updated to better handle peaked tokens
 func (p *Parser) unexpected(prefix string) error {
 	return fmt.Errorf("parser: %s unexpected token %s (%d:%d)", prefix, p.l.Token.String(), p.l.Token.Line, p.l.Token.Start)
 }
@@ -48,7 +48,7 @@ func (p *Parser) parseDocument() (*ast.Document, error) {
 	doc := &ast.Document{
 		Scope: p.sc,
 	}
-	for p.l.Next() {
+	for !p.Accept(token.EOF) {
 		child, err := p.parseFragment()
 		if err != nil {
 			return nil, err
@@ -59,13 +59,18 @@ func (p *Parser) parseDocument() (*ast.Document, error) {
 }
 
 func (p *Parser) parseFragment() (ast.Fragment, error) {
-	switch p.l.Token.Type {
-	case token.Text:
+	switch {
+	case p.Accept(token.Text):
 		return p.parseText()
-	case token.LessThan:
+	case p.Accept(token.LessThan):
 		return p.parseTag()
-	case token.LeftBrace:
-		return p.parseBlockMustache()
+	case p.Accept(token.LeftBrace):
+		switch {
+		case p.Accept(token.If):
+			return p.parseIfBlock()
+		default:
+			return p.parseMustache()
+		}
 	default:
 		return nil, p.unexpected("fragment")
 	}
@@ -73,16 +78,17 @@ func (p *Parser) parseFragment() (ast.Fragment, error) {
 
 func (p *Parser) parseText() (*ast.Text, error) {
 	return &ast.Text{
-		Value: p.l.Token.Text,
+		Value: p.Text(),
 	}, nil
 }
 
 func (p *Parser) parseTag() (ast.Fragment, error) {
-	p.l.Next()
-	switch p.l.Token.Type {
-	case token.Identifier:
+	switch {
+	// case p.Accept(token.Doctype):
+	// 	return p.parseDoctype()
+	case p.Accept(token.Identifier):
 		return p.parseElement()
-	case token.Script:
+	case p.Accept(token.Script):
 		return p.parseScript()
 	default:
 		return nil, p.unexpected("tag")
@@ -90,120 +96,96 @@ func (p *Parser) parseTag() (ast.Fragment, error) {
 }
 
 func (p *Parser) parseElement() (*ast.Element, error) {
-	node := new(ast.Element)
-	node.Name = p.l.Token.Text
+	node := &ast.Element{
+		Name: p.Text(),
+	}
 
-	// Opening tag
 openTag:
-	for p.l.Next() {
-		switch p.l.Token.Type {
-		case token.SlashGreaterThan:
+	for {
+		switch {
+		case p.Accept(token.SlashGreaterThan):
 			node.SelfClosing = true
 			return node, nil
-		case token.GreaterThan:
+		case p.Accept(token.GreaterThan):
 			break openTag
-		case token.Identifier:
+		case p.Accept(token.Identifier):
 			attr, err := p.parseAttribute()
 			if err != nil {
 				return nil, err
 			}
 			node.Attributes = append(node.Attributes, attr)
-			// End of tag
-			if p.l.Token.Type == token.GreaterThan {
-				break openTag
-			} else if p.l.Token.Type == token.SlashGreaterThan {
-				node.SelfClosing = true
-				return node, nil
-			}
-		case token.LeftBrace:
+		case p.Accept(token.LeftBrace):
 			attr, err := p.parseAttributeShorthand()
 			if err != nil {
 				return nil, err
 			}
 			node.Attributes = append(node.Attributes, attr)
-			// End of tag
-			if p.l.Token.Type == token.GreaterThan {
-				break openTag
-			} else if p.l.Token.Type == token.SlashGreaterThan {
-				node.SelfClosing = true
-				return node, nil
-			}
 		default:
 			return nil, p.unexpected("element")
 		}
 	}
 
-	// Add any children
-	for p.l.Next() && p.l.Token.Type != token.LessThanSlash {
+	for !p.Accept(token.LessThanSlash) {
 		child, err := p.parseFragment()
 		if err != nil {
 			return nil, err
 		}
 		node.Children = append(node.Children, child)
-
 	}
 
-	if p.l.Token.Type != token.LessThanSlash {
-		return nil, p.unexpected("element")
+	// Closing tag
+	if err := p.Expect(token.Identifier); err != nil {
+		return nil, err
+	} else if p.Text() != node.Name {
+		return nil, fmt.Errorf("expected closing tag %s, got %s", node.Name, p.Text())
 	}
-	p.l.Next()
-	if p.l.Token.Type != token.Identifier {
-		return nil, p.unexpected("element")
-	} else if p.l.Token.Text != node.Name {
-		return nil, fmt.Errorf("expected closing tag %s, got %s", node.Name, p.l.Token.Text)
+	if err := p.Expect(token.GreaterThan); err != nil {
+		return nil, err
 	}
-	p.l.Next()
-	if p.l.Token.Type != token.GreaterThan {
-		return nil, p.unexpected("element")
-	}
+
 	return node, nil
 }
 
 func (p *Parser) parseAttribute() (ast.Attribute, error) {
-	key := p.l.Token.Text
-	return p.parseField(key)
+	return p.parseField(p.Text())
 }
 
 func (p *Parser) parseField(key string) (*ast.Field, error) {
-	field := new(ast.Field)
-	field.Key = key
-	field.EventHandler = event.Is(key)
-	for p.l.Next() {
-		switch p.l.Token.Type {
-		case token.Equal:
-			if field.EventHandler {
-				value, err := p.parseEventValue()
-				if err != nil {
-					return nil, err
-				}
-				field.Values = append(field.Values, value)
-				return field, nil
-			}
-			values, err := p.parseAttributeValues()
-			if err != nil {
-				return nil, err
-			}
-			field.Values = values
-			return field, nil
-		default:
-			return nil, p.unexpected("field")
-		}
+	field := &ast.Field{
+		Key:          key,
+		EventHandler: event.Is(key),
 	}
+	if err := p.Expect(token.Equal); err != nil {
+		return nil, err
+	}
+	if field.EventHandler {
+		value, err := p.parseEventValue()
+		if err != nil {
+			return nil, err
+		}
+		field.Values = append(field.Values, value)
+		return field, nil
+	}
+	values, err := p.parseAttributeValues()
+	if err != nil {
+		return nil, err
+	}
+	field.Values = values
 	return field, nil
 }
 
 func (p *Parser) parseAttributeValues() (values []ast.Value, err error) {
-	for p.l.Next() {
-		switch p.l.Token.Type {
-		case token.SlashGreaterThan, token.GreaterThan:
-			return values, nil
-		case token.Quote:
+	for !p.Is(token.GreaterThan, token.SlashGreaterThan) {
+		switch {
+		case p.Accept(token.Quote):
 			return p.parseAttributeStringValues()
-		case token.Text:
-			values = append(values, &ast.Text{
-				Value: p.l.Token.Text,
-			})
-		case token.LeftBrace:
+		case p.Accept(token.Text):
+			text, err := p.parseText()
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, text)
+		case p.Accept(token.LeftBrace):
 			mustache, err := p.parseMustache()
 			if err != nil {
 				return nil, err
@@ -217,15 +199,17 @@ func (p *Parser) parseAttributeValues() (values []ast.Value, err error) {
 }
 
 func (p *Parser) parseAttributeStringValues() (values []ast.Value, err error) {
-	for p.l.Next() {
-		switch p.l.Token.Type {
-		case token.Quote:
+	for {
+		switch {
+		case p.Accept(token.Quote):
 			return values, nil
-		case token.Text:
-			values = append(values, &ast.Text{
-				Value: p.l.Token.Text,
-			})
-		case token.LeftBrace:
+		case p.Accept(token.Text):
+			text, err := p.parseText()
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, text)
+		case p.Accept(token.LeftBrace):
 			mustache, err := p.parseMustache()
 			if err != nil {
 				return nil, err
@@ -235,167 +219,186 @@ func (p *Parser) parseAttributeStringValues() (values []ast.Value, err error) {
 			return nil, p.unexpected("attribute value")
 		}
 	}
-	return nil, p.unexpected("attribute value")
 }
 
 func (p *Parser) parseEventValue() (value ast.Value, err error) {
-	for p.l.Next() {
-		switch p.l.Token.Type {
-		case token.LeftBrace:
-			return p.parseMustache()
-		default:
-			return nil, p.unexpected("event value")
-		}
+	if err := p.Expect(token.LeftBrace); err != nil {
+		return nil, err
 	}
-	return nil, p.unexpected("event value")
-}
-
-var errDoneBlock = errors.New("done block")
-
-func (p *Parser) parseBlockMustache() (ast.Fragment, error) {
-	for p.l.Next() {
-		switch p.l.Token.Type {
-		case token.Expr:
-			node := new(ast.Mustache)
-			expr, err := p.parseExpression()
-			if err != nil {
-				return nil, err
-			}
-			node.Expr = expr
-			p.l.Next()
-			if p.l.Token.Type != token.RightBrace {
-				return nil, p.unexpected("mustache")
-			}
-			return node, nil
-		case token.If:
-			p.l.Next()
-			return p.parseIfBlock(true)
-		default:
-			return nil, p.unexpected("mustache")
-		}
-	}
-	return nil, p.unexpected("mustache")
+	return p.parseMustache()
 }
 
 func (p *Parser) parseMustache() (*ast.Mustache, error) {
 	node := new(ast.Mustache)
-	p.l.Next()
-	if p.l.Token.Type != token.Expr {
-		return nil, p.unexpected("mustache")
+	if err := p.Expect(token.Expr); err != nil {
+		return nil, err
 	}
 	expr, err := p.parseExpression()
 	if err != nil {
 		return nil, err
 	}
 	node.Expr = expr
-	p.l.Next()
-	if p.l.Token.Type != token.RightBrace {
-		return nil, p.unexpected("mustache")
+	if err := p.Expect(token.RightBrace); err != nil {
+		return nil, err
 	}
 	return node, nil
 }
 
-func (p *Parser) parseIfBlock(parseEnd bool) (*ast.IfBlock, error) {
+func (p *Parser) parseIfBlock() (*ast.IfBlock, error) {
 	node := new(ast.IfBlock)
-	if p.l.Token.Type != token.Expr {
-		return nil, p.unexpected("if block")
+	if err := p.Expect(token.Expr); err != nil {
+		return nil, err
 	}
 	expr, err := p.parseExpression()
 	if err != nil {
 		return nil, err
 	}
 	node.Cond = expr
-	p.l.Next()
-	if p.l.Token.Type != token.RightBrace {
-		return nil, p.unexpected("if block")
+	if err := p.Expect(token.RightBrace); err != nil {
+		return nil, err
 	}
-	for p.l.Next() {
-		switch p.l.Token.Type {
-		case token.LeftBrace:
-			p.l.Next()
-			switch p.l.Token.Type {
-			case token.Expr:
-				mustache := new(ast.Mustache)
-				expr, err := p.parseExpression()
-				if err != nil {
-					return nil, err
-				}
-				mustache.Expr = expr
-				p.l.Next()
-				if p.l.Token.Type != token.RightBrace {
-					return nil, p.unexpected("if block")
-				}
-				node.Then = append(node.Then, mustache)
-			case token.End:
-				if parseEnd {
-					if err := p.parseEnd(); err != nil {
-						return nil, err
-					}
-				}
-				return node, nil
-			case token.If:
-				p.l.Next()
-				ifBlock, err := p.parseIfBlock(true)
-				if err != nil {
-					return nil, err
-				}
-				node.Then = append(node.Then, ifBlock)
-			case token.ElseIf:
-				p.l.Next()
-				ifBlock, err := p.parseIfBlock(false)
-				if err != nil {
-					return nil, err
-				}
-				node.Else = append(node.Else, ifBlock)
-			case token.Else:
-				p.l.Next()
-				if p.l.Token.Type != token.RightBrace {
-					return nil, p.unexpected("if block")
-				}
-				p.l.Next()
-				fragment, err := p.parseFragment()
-				if err != nil {
-					if err != errDoneBlock {
-						return nil, err
-					}
-					return node, nil
-				}
-				node.Else = append(node.Else, fragment)
-			default:
-				return nil, p.unexpected("if block")
+	for !p.Accept(token.LeftBrace, token.End) {
+		switch {
+		case p.Accept(token.EOF):
+			return nil, fmt.Errorf("unclosed if block")
+		case p.Accept(token.LeftBrace, token.ElseIf):
+			ifBlock, err := p.parseElseIfBlock()
+			if err != nil {
+				return nil, err
 			}
-		// This is meant to be the right brace of an {end}
-		// TODO: simplify
-		case token.RightBrace:
-			p.l.Next()
-			return node, nil
+			node.Else = append(node.Else, ifBlock)
+			continue
+		case p.Accept(token.LeftBrace, token.Else):
+			fragments, err := p.parseElseBlock()
+			if err != nil {
+				return nil, err
+			}
+			node.Else = append(node.Else, fragments...)
 		default:
 			fragment, err := p.parseFragment()
 			if err != nil {
-				if err != errDoneBlock {
-					return nil, err
-				}
-				return node, nil
+				return nil, err
 			}
 			node.Then = append(node.Then, fragment)
 		}
 	}
-	return nil, fmt.Errorf("unclosed if block")
+	if err := p.Expect(token.RightBrace); err != nil {
+		return nil, err
+	}
+	return node, nil
 }
 
-func (p *Parser) parseEnd() error {
-	p.l.Next()
-	if p.l.Token.Type != token.RightBrace {
-		return p.unexpected("end")
+func (p *Parser) parseElseIfBlock() (*ast.IfBlock, error) {
+	node := new(ast.IfBlock)
+	if err := p.Expect(token.Expr); err != nil {
+		return nil, err
+	}
+	expr, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+	node.Cond = expr
+	if err := p.Expect(token.RightBrace); err != nil {
+		return nil, err
+	}
+	for !p.Check(token.LeftBrace, token.End) {
+		switch {
+		case p.Accept(token.EOF):
+			return nil, fmt.Errorf("unclosed if block")
+		case p.Accept(token.LeftBrace, token.ElseIf):
+			ifBlock, err := p.parseElseIfBlock()
+			if err != nil {
+				return nil, err
+			}
+			node.Else = append(node.Else, ifBlock)
+		case p.Accept(token.LeftBrace, token.Else):
+			fragments, err := p.parseElseBlock()
+			if err != nil {
+				return nil, err
+			}
+			node.Else = append(node.Else, fragments...)
+		default:
+			fragment, err := p.parseFragment()
+			if err != nil {
+				return nil, err
+			}
+			node.Then = append(node.Then, fragment)
+		}
+	}
+	return node, nil
+}
+
+func (p *Parser) parseElseBlock() (fragments []ast.Fragment, err error) {
+	if p.Expect(token.RightBrace); err != nil {
+		return nil, err
+	}
+	for !p.Check(token.LeftBrace, token.End) {
+		fragment, err := p.parseFragment()
+		if err != nil {
+			return nil, err
+		}
+		fragments = append(fragments, fragment)
+	}
+	return fragments, nil
+}
+
+// Checks that the next token is one of the given types
+func (p *Parser) Is(types ...token.Type) bool {
+	token := p.l.Peak(1)
+	for _, t := range types {
+		if token.Type == t {
+			return true
+		}
+	}
+	return false
+}
+
+// Returns true if all the given tokens are next
+func (p *Parser) Check(tokens ...token.Type) bool {
+	for i, token := range tokens {
+		if p.l.Peak(i+1).Type != token {
+			return false
+		}
+	}
+	return true
+}
+
+// Returns true if all the given tokens are next
+func (p *Parser) Accept(tokens ...token.Type) bool {
+	if !p.Check(tokens...) {
+		return false
+	}
+	for i := 0; i < len(tokens); i++ {
+		p.l.Next()
+	}
+	return true
+}
+
+func (p *Parser) Expect(tokens ...token.Type) error {
+	for i, token := range tokens {
+		if p.l.Peak(i+1).Type != token {
+			return fmt.Errorf("expected %s, got %s", token, p.l.Token.Type)
+		}
+	}
+	for i := 0; i < len(tokens); i++ {
+		p.l.Next()
 	}
 	return nil
 }
 
+// Type of the current token
+func (p *Parser) Type() token.Type {
+	return p.l.Token.Type
+}
+
+// Text of the current token
+func (p *Parser) Text() string {
+	return p.l.Token.Text
+}
+
 func (p *Parser) parseAttributeShorthand() (ast.Attribute, error) {
-	node := new(ast.AttributeShorthand)
-	p.l.Next()
-	if p.l.Token.Type != token.Expr {
-		return nil, p.unexpected("attribute shorthand")
+	if err := p.Expect(token.Expr); err != nil {
+		return nil, err
 	}
 	expr, err := p.parseExpression()
 	if err != nil {
@@ -405,14 +408,14 @@ func (p *Parser) parseAttributeShorthand() (ast.Attribute, error) {
 	if !ok {
 		return nil, fmt.Errorf("expected and identifier, got %T", expr)
 	}
-	name := string(ident.Data)
-	node.Key = name
-	node.EventHandler = event.Is(name)
-	p.l.Next()
-	if p.l.Token.Type != token.RightBrace {
-		return nil, p.unexpected("attribute shorthand")
+	if err := p.Expect(token.RightBrace); err != nil {
+		return nil, err
 	}
-	return node, nil
+	name := string(ident.Data)
+	return &ast.AttributeShorthand{
+		Key:          name,
+		EventHandler: event.Is(name),
+	}, nil
 }
 
 var options = js.Options{}
@@ -440,26 +443,52 @@ func (p *Parser) parseExpression() (js.IExpr, error) {
 }
 
 func (p *Parser) parseScript() (*ast.Script, error) {
-	node := new(ast.Script)
-	node.Name = p.l.Token.Text
+	node := &ast.Script{
+		Name: p.Text(),
+	}
 
-	// Opening tag
 openTag:
-	for p.l.Next() {
-		switch p.l.Token.Type {
-		case token.SlashGreaterThan:
-			return node, nil
-		case token.GreaterThan:
+	for {
+		switch {
+		case p.Accept(token.GreaterThan):
 			break openTag
-		// TODO: handle attributes
+		case p.Accept(token.Identifier):
+			attr, err := p.parseAttribute()
+			if err != nil {
+				return nil, err
+			}
+			node.Attributes = append(node.Attributes, attr)
+		case p.Accept(token.LeftBrace):
+			attr, err := p.parseAttributeShorthand()
+			if err != nil {
+				return nil, err
+			}
+			node.Attributes = append(node.Attributes, attr)
 		default:
-			return nil, p.unexpected("script")
+			return nil, p.unexpected("element")
 		}
 	}
 
+	// Expect the program
+	if err := p.Expect(token.Text); err != nil {
+		return nil, err
+	}
+
+	jsCode := p.Text()
+
+	// Closing tag
+	if err := p.Expect(token.LessThanSlash); err != nil {
+		return nil, err
+	}
+	if err := p.Expect(token.Script); err != nil {
+		return nil, err
+	}
+	if err := p.Expect(token.GreaterThan); err != nil {
+		return nil, err
+	}
+
 	// Parse the program
-	p.l.Next()
-	program, err := js.Parse(parse.NewInputString(p.l.Token.Text), options)
+	program, err := js.Parse(parse.NewInputString(jsCode), options)
 	if err != nil {
 		return nil, err
 	}
@@ -468,23 +497,7 @@ openTag:
 		return nil, err
 	}
 	node.Program = program
-	p.l.Next()
 
-	// Closing tag
-	if p.l.Token.Type != token.LessThanSlash {
-		return nil, p.unexpected("script")
-	}
-	p.l.Next()
-	if p.l.Token.Type != token.Script {
-		return nil, p.unexpected("script")
-	}
-	if p.l.Token.Text != node.Name {
-		return nil, fmt.Errorf("expected closing tag %s, got %s", node.Name, p.l.Token.Text)
-	}
-	p.l.Next()
-	if p.l.Token.Type != token.GreaterThan {
-		return nil, p.unexpected("script")
-	}
 	return node, nil
 }
 

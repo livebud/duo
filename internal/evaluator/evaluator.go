@@ -57,8 +57,12 @@ type writer interface {
 }
 
 func (e *evaluator) evaluateDocument(w writer, scope reflect.Value, node *ast.Document) error {
-	for _, child := range node.Children {
-		if err := e.evaluateFragment(w, scope, child); err != nil {
+	return e.evaluateFragments(w, scope, node.Children...)
+}
+
+func (e *evaluator) evaluateFragments(w writer, scope reflect.Value, nodes ...ast.Fragment) error {
+	for _, node := range nodes {
+		if err := e.evaluateFragment(w, scope, node); err != nil {
 			return err
 		}
 	}
@@ -75,6 +79,8 @@ func (e *evaluator) evaluateFragment(w writer, scope reflect.Value, node ast.Fra
 		return e.evaluateMustache(w, scope, n)
 	case *ast.Script:
 		return e.evaluateScript(w, scope, n)
+	case *ast.IfBlock:
+		return e.evaluateIfBlock(w, scope, n)
 	default:
 		return fmt.Errorf("unknown fragment %T", n)
 	}
@@ -415,5 +421,33 @@ func evaluateIdentifier(scope reflect.Value, node *js.LiteralExpr) (reflect.Valu
 		return value, nil
 	default:
 		return reflect.Value{}, fmt.Errorf("unexpected scope type %s", scope.Kind().String())
+	}
+}
+
+func (e *evaluator) evaluateIfBlock(w writer, scope reflect.Value, node *ast.IfBlock) error {
+	cond, err := evaluateExpr(scope, node.Cond)
+	if err != nil {
+		return err
+	}
+	if isTruthy(cond) {
+		return e.evaluateFragments(w, scope, node.Then...)
+	}
+	return e.evaluateFragments(w, scope, node.Else...)
+}
+
+func isTruthy(value reflect.Value) bool {
+	switch value.Kind() {
+	case reflect.Interface:
+		return isTruthy(value.Elem())
+	case reflect.Bool:
+		return value.Bool()
+	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int8, reflect.Int16:
+		return value.Int() != 0
+	case reflect.String:
+		return value.String() != ""
+	case reflect.Invalid:
+		return false
+	default:
+		return false
 	}
 }

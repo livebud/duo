@@ -15,6 +15,7 @@ func New(input string) *Lexer {
 	l := &Lexer{
 		input:  input,
 		states: []state{textState},
+		line:   1,
 	}
 	l.step()
 	return l
@@ -82,11 +83,15 @@ func (l *Lexer) Next() bool {
 	return l.Token.Type != token.EOF
 }
 
-// func (l *Lexer) Peak() token.Token {
-// 	token := l.nextToken()
-// 	l.peaked = append(l.peaked, token)
-// 	return token
-// }
+func (l *Lexer) Peak(nth int) token.Token {
+	if len(l.peaked) >= nth {
+		return l.peaked[nth-1]
+	}
+	for i := len(l.peaked); i < nth; i++ {
+		l.peaked = append(l.peaked, l.nextToken())
+	}
+	return l.peaked[nth-1]
+}
 
 // Use -1 to indicate the end of the file
 const eof = -1

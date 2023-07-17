@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/livebud/duo/internal/lexer"
+	"github.com/matryer/is"
 	"github.com/matthewmueller/diff"
 )
 
@@ -33,6 +34,28 @@ func equal(t *testing.T, name, input, expected string) {
 		b.WriteString("\n")
 		t.Fatal(b.String())
 	})
+}
+
+func TestAPI(t *testing.T) {
+	is := is.New(t)
+	lex := lexer.New("<h1>hi</h1>")
+	is.Equal(lex.Next(), true)
+	is.Equal(lex.Token.String(), `<`)
+	is.Equal(lex.Next(), true)
+	is.Equal(lex.Token.String(), `identifier:"h1"`)
+	p1 := lex.Peak(1)
+	is.Equal(p1.String(), `>`)
+	p1 = lex.Peak(1)
+	is.Equal(p1.String(), `>`)
+	p2 := lex.Peak(2)
+	is.Equal(p2.String(), `text:"hi"`)
+	p2 = lex.Peak(2)
+	is.Equal(p2.String(), `text:"hi"`)
+	is.Equal(lex.Token.String(), `identifier:"h1"`)
+	is.Equal(lex.Next(), true)
+	is.Equal(lex.Token.String(), `>`)
+	is.Equal(lex.Next(), true)
+	is.Equal(lex.Token.String(), `text:"hi"`)
 }
 
 func TestHTML(t *testing.T) {
@@ -140,4 +163,5 @@ func TestIfStatement(t *testing.T) {
 	equal(t, "", "{if x == 10}{x}{else if y > 10}{y}{else}none{end}", `{ if:"if " expr:"x == 10" } { expr:"x" } { else_if:"else if " expr:"y > 10" } { expr:"y" } { else } text:"none" { end }`)
 	equal(t, "", "{  if     x   ==   10  }{  x  }{   else    if    y > 10   }{  y   }{   else   }none{   end   }", `{ if:"  if " expr:"    x   ==   10  " } { expr:"  x  " } { else_if:"   else    if " expr:"   y > 10   " } { expr:"  y   " } { else:"   else   " } text:"none" { end:"   end   " }`)
 	equal(t, "", "{if x}{x}{else}{y}{end}", `{ if:"if " expr:"x" } { expr:"x" } { else } { expr:"y" } { end }`)
+	equal(t, "", "<h1>{if greeting}hi{else if planet}mars{end}</h1>", `< identifier:"h1" > { if:"if " expr:"greeting" } text:"hi" { else_if:"else if " expr:"planet" } text:"mars" { end } </ identifier:"h1" >`)
 }

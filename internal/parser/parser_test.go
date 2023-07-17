@@ -8,7 +8,10 @@ import (
 	"testing"
 
 	"github.com/lithammer/dedent"
+	"github.com/livebud/duo/internal/lexer"
 	"github.com/livebud/duo/internal/parser"
+	"github.com/livebud/duo/internal/token"
+	"github.com/matryer/is"
 	"github.com/matthewmueller/diff"
 )
 
@@ -86,6 +89,43 @@ func equalScope(t *testing.T, name, expected string) {
 	t.Fatal(b.String())
 }
 
+func TestAPI(t *testing.T) {
+	is := is.New(t)
+	p := parser.New(lexer.New("<h1>hi</h1>"))
+	is.Equal(p.Accept(token.Text), false)
+	is.Equal(p.Type(), token.Type(""))
+	is.Equal(p.Text(), "")
+	is.Equal(p.Accept(token.LessThan), true)
+	is.Equal(p.Type(), token.LessThan)
+	is.Equal(p.Text(), "<")
+	is.Equal(p.Accept(token.Identifier), true)
+	is.Equal(p.Type(), token.Identifier)
+	is.Equal(p.Text(), "h1")
+	// Keep old if accept if false
+	is.Equal(p.Accept(token.If), false)
+	is.Equal(p.Type(), token.Identifier)
+	is.Equal(p.Text(), "h1")
+	is.Equal(p.Is(token.GreaterThan), true)
+	is.Equal(p.Accept(token.GreaterThan), true)
+	is.Equal(p.Type(), token.GreaterThan)
+	is.Equal(p.Text(), ">")
+	is.Equal(p.Accept(token.Text), true)
+	is.Equal(p.Type(), token.Text)
+	is.Equal(p.Text(), "hi")
+	is.Equal(p.Accept(token.LessThanSlash), true)
+	is.Equal(p.Type(), token.LessThanSlash)
+	is.Equal(p.Text(), "</")
+	is.Equal(p.Accept(token.Identifier), true)
+	is.Equal(p.Type(), token.Identifier)
+	is.Equal(p.Text(), "h1")
+	is.Equal(p.Accept(token.GreaterThan), true)
+	is.Equal(p.Type(), token.GreaterThan)
+	is.Equal(p.Text(), ">")
+	is.Equal(p.Accept(token.Identifier), false)
+	is.Equal(p.Type(), token.GreaterThan)
+	is.Equal(p.Text(), ">")
+}
+
 func Test(t *testing.T) {
 	equal(t, "simple", "<h1>hi</h1>", `<h1>hi</h1>`)
 	equal(t, "expr", "<h1>{greeting}</h1>", `<h1>{greeting}</h1>`)
@@ -117,25 +157,6 @@ func TestEventHandler(t *testing.T) {
 	equal(t, "", "<button {onClick} {onDragStart}>+</button>", `<button {onClick} {onDragStart}>+</button>`)
 }
 
-func TestIfStatement(t *testing.T) {
-	equal(t, "", "{if x}{x}{end}", `{if x}{x}{end}`)
-	equal(t, "", "{if x}{if y}{y}{end}{x}{end}", `{if x}{if y}{y}{end}{x}{end}`)
-	equal(t, "", "{if x}\n{x}\n{end}", `{if x}{x}{end}`)
-	equal(t, "", "{if x > 10}{x}{end}", `{if x > 10}{x}{end}`)
-	equal(t, "", "{if (x > 10)}{x}{end}", `{if (x > 10)}{x}{end}`)
-	equal(t, "", "{  if x > 10   }{  x    }{   end   }", `{if x > 10}{x}{end}`)
-	equal(t, "", "{if x}{x}{else if y}{y}{end}", `{if x}{x}{else}{if y}{y}{end}{end}`)
-	equal(t, "", "{if x}{x}{else if (y)}{y}{end}", `{if x}{x}{else}{if (y)}{y}{end}{end}`)
-	equal(t, "", "{if x}\n{x}\n{else if y}\n{y}\n{end}", `{if x}{x}{else}{if y}{y}{end}{end}`)
-	equal(t, "", "{   if x   }{x}{    else if y  }{y}{   end  }", `{if x}{x}{else}{if y}{y}{end}{end}`)
-	equal(t, "", "{if x == 10}{x}{else if y > 10}{y}{end}", `{if x == 10}{x}{else}{if y > 10}{y}{end}{end}`)
-	equal(t, "", "{if x == 10}{x}{else if (y > 10)}{y}{end}", `{if x == 10}{x}{else}{if (y > 10)}{y}{end}{end}`)
-	equal(t, "", "{if x == 10}{x}{else if y > 10}{y}{else}none{end}", `{if x == 10}{x}{else}{if y > 10}{y}{else}none{end}{end}`)
-	equal(t, "", "{  if     x   ==   10  }{  x  }{   else    if    y > 10   }{  y   }{   else   }none{   end   }", `{if x == 10}{x}{else}{if y > 10}{y}{else}none{end}{end}`)
-	equal(t, "", "{if x}{x}{else   }{y}{end}", `{if x}{x}{else}{y}{end}`)
-	equal(t, "", "{if x}{x}{else}{y}{end}", `{if x}{x}{else}{y}{end}`)
-}
-
 func TestFile(t *testing.T) {
 	equalFile(t, "01-greeting.html", `<script>export let greeting = "hello"; setInterval(() => { greeting += "o"; }, 500); </script><h1>{greeting}</h1>`)
 	equalFile(t, "02-attribute.html", `<div><hr {name} /><hr name="{name}" /><hr name="{name}" /><hr name="{target}-{name}" /><hr name="" /></div>`)
@@ -155,4 +176,27 @@ func TestScope(t *testing.T) {
 		"count" declared=true exported=true mutable=true
 		"increment" declared=true exported=false mutable=false
 	`)
+}
+
+func TestIfStatement(t *testing.T) {
+	equal(t, "", "{if x}{x}{end}", `{if x}{x}{end}`)
+	equal(t, "", "{if x}{if y}{y}{end}{x}{end}", `{if x}{if y}{y}{end}{x}{end}`)
+	equal(t, "", "{if x}\n{x}\n{end}", `{if x}{x}{end}`)
+	equal(t, "", "{if x > 10}{x}{end}", `{if x > 10}{x}{end}`)
+	equal(t, "", "{if (x > 10)}{x}{end}", `{if (x > 10)}{x}{end}`)
+	equal(t, "", "{  if x > 10   }{  x    }{   end   }", `{if x > 10}{x}{end}`)
+	equal(t, "", "{if x}{x}{else if y}{y}{end}", `{if x}{x}{else}{if y}{y}{end}{end}`)
+	equal(t, "", "{if x}{x}{else if (y)}{y}{end}", `{if x}{x}{else}{if (y)}{y}{end}{end}`)
+	equal(t, "", "{if x}\n{x}\n{else if y}\n{y}\n{end}", `{if x}{x}{else}{if y}{y}{end}{end}`)
+	equal(t, "", "{   if x   }{x}{    else if y  }{y}{   end  }", `{if x}{x}{else}{if y}{y}{end}{end}`)
+	equal(t, "", "{if x == 10}{x}{else if y > 10}{y}{end}", `{if x == 10}{x}{else}{if y > 10}{y}{end}{end}`)
+	equal(t, "", "{if x == 10}{x}{else if (y > 10)}{y}{end}", `{if x == 10}{x}{else}{if (y > 10)}{y}{end}{end}`)
+	equal(t, "", "{if x == 10}{x}{else if y > 10}{y}{else}none{end}", `{if x == 10}{x}{else}{if y > 10}{y}{else}none{end}{end}`)
+	equal(t, "", "{  if     x   ==   10  }{  x  }{   else    if    y > 10   }{  y   }{   else   }none{   end   }", `{if x == 10}{x}{else}{if y > 10}{y}{else}none{end}{end}`)
+	equal(t, "", "{if x}{x}{else   }{y}{end}", `{if x}{x}{else}{y}{end}`)
+	equal(t, "", "{if x}{x}{else}{y}{end}", `{if x}{x}{else}{y}{end}`)
+	equal(t, "", "<h1>{if greeting}hi{else if planet}mars{end}</h1>", `<h1>{if greeting}hi{else}{if planet}mars{end}{end}</h1>`)
+	equal(t, "", "<h1>{if greeting}hi{else if planet}mars{else}world{end}</h1>", `<h1>{if greeting}hi{else}{if planet}mars{else}world{end}{end}</h1>`)
+	equal(t, "", "<h1>{if greeting}hi{else if planet}mars{else if name}world{end}</h1>", `<h1>{if greeting}hi{else}{if planet}mars{else}{if name}world{end}{end}{end}</h1>`)
+	equal(t, "", "<h1>{if greeting}hi{else if planet}mars{else if name}world{else}universe{end}</h1>", `<h1>{if greeting}hi{else}{if planet}mars{else}{if name}world{else}universe{end}{end}{end}</h1>`)
 }
