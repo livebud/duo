@@ -36,9 +36,9 @@ func TestNew(t *testing.T) {
 	s.Use("bar")
 	s.Use("baz")
 	equalScope(t, s, `
-		"foo" declared=false exported=false mutable=false
-		"bar" declared=false exported=false mutable=false
-		"baz" declared=false exported=false mutable=false
+		"foo"
+		"bar"
+		"baz"
 	`)
 }
 
@@ -52,12 +52,12 @@ func TestScope(t *testing.T) {
 	s.Use("cool")
 	s.Use("foo")
 	equalScope(t, s, `
-		"foo" declared=false exported=false mutable=false
-		"bar" declared=false exported=false mutable=false
-		"baz" declared=false exported=false mutable=false
+		"foo"
+		"bar"
+		"baz"
 
-		"ok" declared=false exported=false mutable=false
-		"cool" declared=false exported=false mutable=false
+		"ok"
+		"cool"
 	`)
 }
 

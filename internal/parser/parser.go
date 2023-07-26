@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/livebud/duo/internal/ast"
 	"github.com/livebud/duo/internal/event"
@@ -12,27 +13,28 @@ import (
 	"github.com/tdewolff/parse/v2/js"
 )
 
-func Parse(input string) (*ast.Document, error) {
+func Parse(path, input string) (*ast.Document, error) {
 	l := lexer.New(input)
-	p := New(l)
+	p := New(path, l)
 	return p.Parse()
 }
 
-func Print(input string) string {
-	doc, err := Parse(input)
+func Print(path, input string) string {
+	doc, err := Parse(path, input)
 	if err != nil {
 		return err.Error()
 	}
 	return doc.String()
 }
 
-func New(l *lexer.Lexer) *Parser {
-	return &Parser{l, scope.New()}
+func New(path string, l *lexer.Lexer) *Parser {
+	return &Parser{path, l, scope.New()}
 }
 
 type Parser struct {
-	l  *lexer.Lexer
-	sc *scope.Scope
+	path string
+	l    *lexer.Lexer
+	sc   *scope.Scope
 }
 
 func (p *Parser) Parse() (*ast.Document, error) {
@@ -599,6 +601,8 @@ func (p *Parser) walkStmt(sc *scope.Scope, node js.IStmt) error {
 		return p.walkVarDecl(sc, stmt)
 	case *js.ExportStmt:
 		return p.walkExportStmt(sc, stmt)
+	case *js.ImportStmt:
+		return p.walkImportStmt(sc, stmt)
 	case *js.ExprStmt:
 		return p.walkExprStmt(sc, stmt)
 	case *js.FuncDecl:
@@ -624,6 +628,21 @@ func (p *Parser) walkExportStmt(sc *scope.Scope, node *js.ExportStmt) error {
 	}
 	if len(node.List) > 0 {
 		return fmt.Errorf("parser: walk exported aliases not implemented yet")
+	}
+	return nil
+}
+
+func (p *Parser) walkImportStmt(sc *scope.Scope, node *js.ImportStmt) error {
+	importPath := strings.Trim(string(node.Module), `"'`)
+	if node.Default != nil {
+		sym := sc.Use(string(node.Default))
+		sym.Import = &scope.Import{
+			Path:    importPath,
+			Default: true,
+		}
+	}
+	if len(node.List) > 0 {
+		return fmt.Errorf("parser: walk imported aliases not implemented yet")
 	}
 	return nil
 }

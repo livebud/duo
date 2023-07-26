@@ -190,3 +190,7 @@ func TestForLoop(t *testing.T) {
 	// equal(t, "", "{for items.a.c}{item}{end}", `{ for:"for " expr:"items.a.c" } { expr:"item" } { end }`)
 	// equal(t, "", "{for   items.a.c  }{item}{end}", `{ for:"for " expr:"items.a.c" } { expr:"item" } { end }`)
 }
+
+func TestComponent(t *testing.T) {
+	equal(t, "", "<Component/>", `< identifier:"Component" />`)
+}

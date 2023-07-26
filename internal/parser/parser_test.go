@@ -15,14 +15,14 @@ import (
 	"github.com/matthewmueller/diff"
 )
 
-func equal(t *testing.T, name, input, expected string) {
+func equal(t *testing.T, path, input, expected string) {
 	t.Helper()
-	if name == "" {
-		name = input
+	if path == "" {
+		path = input
 	}
-	t.Run(name, func(t *testing.T) {
+	t.Run(path, func(t *testing.T) {
 		t.Helper()
-		actual := parser.Print(input)
+		actual := parser.Print(path, input)
 		actual = strings.ReplaceAll(actual, "  ", "")
 		actual = strings.ReplaceAll(actual, "\t", "")
 		actual = strings.ReplaceAll(actual, "\n", "")
@@ -46,22 +46,22 @@ func equal(t *testing.T, name, input, expected string) {
 	})
 }
 
-func equalFile(t *testing.T, name, expected string) {
+func equalFile(t *testing.T, path, expected string) {
 	t.Helper()
-	input, err := os.ReadFile(filepath.Join("..", "testdata", name))
+	input, err := os.ReadFile(filepath.Join("..", "testdata", path))
 	if err != nil {
 		t.Fatal(err)
 	}
-	equal(t, name, string(input), expected)
+	equal(t, path, string(input), expected)
 }
 
-func equalScope(t *testing.T, name, expected string) {
+func equalScope(t *testing.T, path, expected string) {
 	t.Helper()
-	input, err := os.ReadFile(filepath.Join("..", "testdata", name))
+	input, err := os.ReadFile(filepath.Join("..", "testdata", path))
 	if err != nil {
 		t.Fatal(err)
 	}
-	ast, err := parser.Parse(string(input))
+	ast, err := parser.Parse(path, string(input))
 	if err != nil {
 		if err.Error() == expected {
 			return
@@ -91,7 +91,7 @@ func equalScope(t *testing.T, name, expected string) {
 
 func TestAPI(t *testing.T) {
 	is := is.New(t)
-	p := parser.New(lexer.New("<h1>hi</h1>"))
+	p := parser.New("", lexer.New("<h1>hi</h1>"))
 	is.Equal(p.Accept(token.Text), false)
 	is.Equal(p.Type(), token.Type(""))
 	is.Equal(p.Text(), "")
@@ -139,9 +139,11 @@ func Test(t *testing.T) {
 	equal(t, "attribute", `<hr data-set={set} />`, `<hr data-set="{set}" />`)
 	equal(t, "attribute", `<hr class={name} />`, `<hr class="{name}" />`)
 	equal(t, "attribute", `<hr class={name}/>`, `<hr class="{name}" />`)
+	equal(t, "attribute", `<hr class={"name"}/>`, `<hr class="{"name"}" />`)
 	equal(t, "attribute", `<h1 name={greeting}>{greeting}</h1>`, `<h1 name="{greeting}">{greeting}</h1>`)
 	equal(t, "attribute", `<hr class="hi-{name}-world" />`, `<hr class="hi-{name}-world" />`)
 	equal(t, "attribute", `<hr class="a{b}c{d}" />`, `<hr class="a{b}c{d}" />`)
+	equal(t, "attribute", `<hr {id} />`, `<hr {id} />`)
 	equal(t, "attribute", `<hr {id} />`, `<hr {id} />`)
 	equal(t, "attribute", `<h1 name="">{greeting}</h1>`, `<h1 name="">{greeting}</h1>`)
 }
@@ -165,16 +167,19 @@ func TestFile(t *testing.T) {
 
 func TestScope(t *testing.T) {
 	equalScope(t, "01-greeting.html", `
-		"greeting" declared=true exported=true mutable=true
-		"setInterval" declared=false exported=false mutable=false
+		"greeting" declared exported mutable
+		"setInterval"
 	`)
 	equalScope(t, "02-attribute.html", `
-		"name" declared=false exported=false mutable=false
-		"target" declared=false exported=false mutable=false
+		"name"
+		"target"
 	`)
 	equalScope(t, "03-counter.html", `
-		"count" declared=true exported=true mutable=true
-		"increment" declared=true exported=false mutable=false
+		"count" declared exported mutable
+		"increment" declared
+	`)
+	equalScope(t, "04-component.html", `
+		"Sub" import="./04-sub.html" default
 	`)
 }
 
@@ -217,4 +222,12 @@ func TestForLoop(t *testing.T) {
 	// equal(t, "", "{for i, item in items}{i}:{item}{else}no items{end}", `{for i, item in items}{i}:{item}{else}no items{end}`)
 	// equal(t, "", "{for i, item in items}{i}:{item}{   else   }no items{end}", `{for i, item in items}{i}:{item}{else}no items{end}`)
 	// equal(t, "", "{for i3, i3tem in items3}{i3}:{i3tem}{else}no items{end}", `{for i3, i3tem in items3}{i3}:{i3tem}{else}no items{end}`)
+}
+
+func TestComponent(t *testing.T) {
+	equal(t, "1.duo", `<script>import Component from "./Component.duo";</script><Component/>`, `<script>import Component from "./Component.duo"; </script><Component />`)
+	equal(t, "2.duo", `<script>import Component from "./component.duo";</script><Component/>`, `<script>import Component from "./component.duo"; </script><Component />`)
+	equal(t, "3.duo", `<script>import Component from "./component.duo";</script><Component a={b}/>`, `<script>import Component from "./component.duo"; </script><Component a="{b}" />`)
+	equal(t, "4.duo", `<script>import A from "./a.duo"; import B from "./b.duo";</script><A/><B/>`, `<script>import A from "./a.duo"; import B from "./b.duo"; </script><A /><B />`)
+	equal(t, "5.duo", `<script>import A from "./a.duo"; import B from "./b.duo"; import C from './c.duo';</script><A/><B/>`, `<script>import A from "./a.duo"; import B from "./b.duo"; import C from './c.duo'; </script><A /><B />`)
 }

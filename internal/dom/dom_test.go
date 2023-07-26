@@ -11,14 +11,14 @@ import (
 	"github.com/matthewmueller/diff"
 )
 
-func equal(t *testing.T, name, input, expected string) {
+func equal(t *testing.T, path, input, expected string) {
 	t.Helper()
-	if name == "" {
-		name = input
+	if path == "" {
+		path = input
 	}
-	t.Run(name, func(t *testing.T) {
+	t.Run(path, func(t *testing.T) {
 		t.Helper()
-		doc, err := parser.Parse(input)
+		doc, err := parser.Parse(path, input)
 		if err != nil {
 			t.Fatal(err)
 		}

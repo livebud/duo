@@ -2,6 +2,7 @@ package scope
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/tdewolff/parse/v2/js"
@@ -160,11 +161,17 @@ func (s *Scope) String() string {
 }
 
 type Symbol struct {
-	Name       string `json:"name,omitempty"`
-	ID         string `json:"id,omitempty"`
+	Name       string  `json:"name,omitempty"`
+	ID         string  `json:"id,omitempty"`
+	Import     *Import // Nil if not an import
 	isDeclared bool
 	isExported bool
 	isMutable  bool
+}
+
+type Import struct {
+	Path    string
+	Default bool
 }
 
 func (s *Symbol) IsDeclared() bool {
@@ -180,12 +187,25 @@ func (s *Symbol) IsMutable() bool {
 }
 
 func (s *Symbol) String() string {
-	return fmt.Sprintf("%q declared=%t exported=%t mutable=%t",
-		s.Name,
-		s.isDeclared,
-		s.isExported,
-		s.isMutable,
-	)
+	w := new(strings.Builder)
+	w.WriteString(strconv.Quote(s.Name))
+	if s.isDeclared {
+		w.WriteString(" declared")
+	}
+	if s.isExported {
+		w.WriteString(" exported")
+	}
+	if s.isMutable {
+		w.WriteString(" mutable")
+	}
+	if s.Import != nil {
+		w.WriteString(" import=")
+		w.WriteString(strconv.Quote(s.Import.Path))
+		if s.Import.Default {
+			w.WriteString(" default")
+		}
+	}
+	return w.String()
 }
 
 func (s *Symbol) ToVar() *js.Var {

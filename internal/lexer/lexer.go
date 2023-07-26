@@ -659,10 +659,6 @@ func isIdentifierHead(cp rune) bool {
 	return isAlpha(cp) || cp == '_' || cp == '$'
 }
 
-func isIdentifierBody(cp rune) bool {
-	return isAlphaNumeric(cp) || cp == '_' || cp == '$'
-}
-
 func isAlpha(cp rune) bool {
 	return (cp >= 'a' && cp <= 'z') || (cp >= 'A' && cp <= 'Z')
 }

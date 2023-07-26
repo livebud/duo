@@ -24,7 +24,7 @@ func ParseFS(fsys fs.FS, path string) (*Template, error) {
 }
 
 func Parse(path string, code []byte) (*Template, error) {
-	doc, err := parser.Parse(string(code))
+	doc, err := parser.Parse(path, string(code))
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +33,7 @@ func Parse(path string, code []byte) (*Template, error) {
 }
 
 func Generate(path string, code []byte) (string, error) {
-	doc, err := parser.Parse(string(code))
+	doc, err := parser.Parse(path, string(code))
 	if err != nil {
 		return "", err
 	}
