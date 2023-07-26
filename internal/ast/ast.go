@@ -264,3 +264,45 @@ func (i *IfBlock) print(indent string) string {
 	out.WriteString("{end}")
 	return out.String()
 }
+
+type ForBlock struct {
+	Key   *js.Var // Can be nil
+	Value *js.Var // Can be nil
+	List  js.IExpr
+	Body  []Fragment
+	Else  []Fragment
+}
+
+func (f *ForBlock) fragment() {}
+
+func (f *ForBlock) Type() string { return "ForBlock" }
+
+func (f *ForBlock) print(indent string) string {
+	out := new(strings.Builder)
+	out.WriteString(indent)
+	out.WriteString("{for ")
+	if f.Key != nil {
+		out.WriteString(string(f.Key.JS()))
+		out.WriteString(", ")
+	}
+	if f.Value != nil {
+		out.WriteString(string(f.Value.JS()))
+		out.WriteString(" in ")
+	}
+	out.WriteString(f.List.JS())
+	out.WriteString("}")
+	for _, child := range f.Body {
+		out.WriteString(child.print(indent + "\t"))
+		out.WriteByte('\n')
+	}
+	if len(f.Else) > 0 {
+		out.WriteString("{else}")
+		for _, child := range f.Else {
+			out.WriteString(child.print(indent + "\t"))
+			out.WriteByte('\n')
+		}
+	}
+	out.WriteString(indent)
+	out.WriteString("{end}")
+	return out.String()
+}

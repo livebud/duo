@@ -41,7 +41,8 @@ func (p *Parser) Parse() (*ast.Document, error) {
 
 // TODO: this needs to be updated to better handle peaked tokens
 func (p *Parser) unexpected(prefix string) error {
-	return fmt.Errorf("parser: %s unexpected token %s (%d:%d)", prefix, p.l.Token.String(), p.l.Token.Line, p.l.Token.Start)
+	token := p.l.Latest()
+	return fmt.Errorf("parser: %s unexpected token %s (%d:%d)", prefix, token.String(), token.Line, token.Start)
 }
 
 func (p *Parser) parseDocument() (*ast.Document, error) {
@@ -68,6 +69,8 @@ func (p *Parser) parseFragment() (ast.Fragment, error) {
 		switch {
 		case p.Accept(token.If):
 			return p.parseIfBlock()
+		case p.Accept(token.For):
+			return p.parseForBlock()
 		default:
 			return p.parseMustache()
 		}
@@ -342,6 +345,83 @@ func (p *Parser) parseElseBlock() (fragments []ast.Fragment, err error) {
 	return fragments, nil
 }
 
+func (p *Parser) parseForBlock() (*ast.ForBlock, error) {
+	node := new(ast.ForBlock)
+	if err := p.Expect(token.Expr); err != nil {
+		return nil, err
+	}
+	left, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+	// Handle {for items}
+	// TODO: cleanup this conditional
+	if p.Accept(token.RightBrace) {
+		node.List = left
+	} else {
+		leftVar, err := exprToVar(left)
+		if err != nil {
+			return nil, err
+		}
+		node.Value = leftVar
+		// Handle {for key, value in items}
+		if p.Accept(token.Comma) {
+			if err := p.Expect(token.Expr); err != nil {
+				return nil, err
+			}
+			middle, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			middleVar, err := exprToVar(middle)
+			if err != nil {
+				return nil, err
+			}
+			node.Key = leftVar
+			node.Value = middleVar
+		}
+		if err := p.Expect(token.In); err != nil {
+			return nil, err
+		}
+		// Parse the expression
+		if err := p.Expect(token.Expr); err != nil {
+			return nil, err
+		}
+		right, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		node.List = right
+		// Closing brace
+		if err := p.Expect(token.RightBrace); err != nil {
+			return nil, err
+		}
+	}
+	// Parse the body
+	for !p.Accept(token.LeftBrace, token.End) {
+		switch {
+		case p.Accept(token.EOF):
+			return nil, fmt.Errorf("unclosed if block")
+		// case p.Accept(token.LeftBrace, token.Else):
+		// 	fragments, err := p.parseElseBlock()
+		// 	if err != nil {
+		// 		return nil, err
+		// 	}
+		// 	node.Else = append(node.Else, fragments...)
+		default:
+			fragment, err := p.parseFragment()
+			if err != nil {
+				return nil, err
+			}
+			node.Body = append(node.Body, fragment)
+		}
+	}
+	if err := p.Expect(token.RightBrace); err != nil {
+		return nil, err
+	}
+	return node, nil
+}
+
 // Checks that the next token is one of the given types
 func (p *Parser) Is(types ...token.Type) bool {
 	token := p.l.Peak(1)
@@ -375,9 +455,12 @@ func (p *Parser) Accept(tokens ...token.Type) bool {
 }
 
 func (p *Parser) Expect(tokens ...token.Type) error {
-	for i, token := range tokens {
-		if p.l.Peak(i+1).Type != token {
-			return fmt.Errorf("expected %s, got %s", token, p.l.Token.Type)
+	for i, tok := range tokens {
+		peaked := p.l.Peak(i + 1)
+		if peaked.Type == token.Error {
+			return fmt.Errorf(peaked.Text)
+		} else if peaked.Type != tok {
+			return fmt.Errorf("expected %s, got %s", tok, peaked.Type)
 		}
 	}
 	for i := 0; i < len(tokens); i++ {
@@ -404,9 +487,9 @@ func (p *Parser) parseAttributeShorthand() (ast.Attribute, error) {
 	if err != nil {
 		return nil, err
 	}
-	ident, ok := expr.(*js.Var)
-	if !ok {
-		return nil, fmt.Errorf("expected and identifier, got %T", expr)
+	ident, err := exprToVar(expr)
+	if err != nil {
+		return nil, err
 	}
 	if err := p.Expect(token.RightBrace); err != nil {
 		return nil, err
@@ -703,4 +786,12 @@ func (p *Parser) walkReturnStmt(sc *scope.Scope, node *js.ReturnStmt) error {
 
 func (p *Parser) walkLiteralExpr(sc *scope.Scope, lit *js.LiteralExpr) error {
 	return nil
+}
+
+func exprToVar(expr js.IExpr) (*js.Var, error) {
+	ident, ok := expr.(*js.Var)
+	if !ok {
+		return nil, fmt.Errorf("expected and identifier, got %T", expr)
+	}
+	return ident, nil
 }

@@ -165,3 +165,28 @@ func TestIfStatement(t *testing.T) {
 	equal(t, "", "{if x}{x}{else}{y}{end}", `{ if:"if " expr:"x" } { expr:"x" } { else } { expr:"y" } { end }`)
 	equal(t, "", "<h1>{if greeting}hi{else if planet}mars{end}</h1>", `< identifier:"h1" > { if:"if " expr:"greeting" } text:"hi" { else_if:"else if " expr:"planet" } text:"mars" { end } </ identifier:"h1" >`)
 }
+
+func TestForLoop(t *testing.T) {
+	equal(t, "", "{for item in items}{item}{end}", `{ for:"for " expr:"item" in:"in " expr:"items" } { expr:"item" } { end }`)
+	equal(t, "", "{for item in items}\n{item}\n{end}", `{ for:"for " expr:"item" in:"in " expr:"items" } text:"\n" { expr:"item" } text:"\n" { end }`)
+	equal(t, "", "{for   item    in   items}  \n  {  item  }  \n  {  end  }", `{ for:"for " expr:"item" in:"in " expr:"  items" } text:"  \n  " { expr:"  item  " } text:"  \n  " { end:"  end  " }`)
+	equal(t, "", "{for i, item in items}{i}:{item}{end}", `{ for:"for " expr:"i" , expr:"item" in:"in " expr:"items" } { expr:"i" } text:":" { expr:"item" } { end }`)
+	equal(t, "", "{for i, item in items}\n{i}:{item}\n{end}", `{ for:"for " expr:"i" , expr:"item" in:"in " expr:"items" } text:"\n" { expr:"i" } text:":" { expr:"item" } text:"\n" { end }`)
+	equal(t, "", "{for   i  ,   item   in   items  }  \n  {  i  }:{  item  }\n{  end  }", `{ for:"for " expr:"i" , expr:"item" in:"in " expr:"  items  " } text:"  \n  " { expr:"  i  " } text:":" { expr:"  item  " } text:"\n" { end:"  end  " }`)
+	equal(t, "", "{for i, item in items}{i}:{item}{   else   }no items{end}", `{ for:"for " expr:"i" , expr:"item" in:"in " expr:"items" } { expr:"i" } text:":" { expr:"item" } { else:"   else   " } text:"no items" { end }`)
+	equal(t, "", "{for 3 in items}{3}{end}", `{ for:"for " error:"unexpected token '3'" text:" in items}" { expr:"3" } { end }`)
+	equal(t, "", "{for items}{item}{end}", `{ for:"for " expr:"items" } { expr:"item" } { end }`)
+
+	// equal(t, "", "{for item in items}{item}{else}no items{end}", `{ for:"for " expr:"item" in:"in " expr:"items" } { expr:"item" } { else } text:"no items" { end }`)
+	// equal(t, "", "{for item in items}{item}{  else   }no items{end}", `{ for:"for " expr:"item" in:"in " expr:"items" } { expr:"item" } { else:"  else   " } text:"no items" { end }`)
+	// equal(t, "", "{for i, item in items}{i}:{item}{else}no items{end}", `{ for:"for " expr:"i" , expr:"item" in:"in " expr:"items" } { expr:"i" } text:":" { expr:"item" } { else } text:"no items" { end }`)
+	// equal(t, "", "{for i3, i3tem in items3}{i3}:{i3tem}{else}no items{end}", `{ for:"for " expr:"i3" , expr:"i3tem" in:"in " expr:"items3" } { expr:"i3" } text:":" { expr:"i3tem" } { else } text:"no items" { end }`)
+	// equal(t, "", "{for i, item in items[0]}{i}:{item}{else}no items{end}", `{ for:"for " expr:"i" , expr:"item" in:"in " expr:"items[0]" } { expr:"i" } text:":" { expr:"item" } { else } text:"no items" { end }`)
+	// equal(t, "", "{for i, item in items.a.b}{i}:{item}{else}no items{end}", `{ for:"for " expr:"i" , expr:"item" in:"in " expr:"items.a.b" } { expr:"i" } text:":" { expr:"item" } { else } text:"no items" { end }`)
+	// equal(t, "", "{for items}{item}{else}no items{end}", `{ for:"for " expr:"items" } { expr:"item" } { else } text:"no items" { end }`)
+	// equal(t, "", "{for   items  }{item}{else}no items{end}", `{ for:"for " expr:"items" } { expr:"item" } { else } text:"no items" { end }`)
+	// equal(t, "", "{for items[0]}{item}{end}", `{ for:"for " expr:"items[0]" } { expr:"item" } { end }`)
+	// equal(t, "", "{for   items[0]  }{item}{end}", `{ for:"for " expr:"items[0]" } { expr:"item" } { end }`)
+	// equal(t, "", "{for items.a.c}{item}{end}", `{ for:"for " expr:"items.a.c" } { expr:"item" } { end }`)
+	// equal(t, "", "{for   items.a.c  }{item}{end}", `{ for:"for " expr:"items.a.c" } { expr:"item" } { end }`)
+}

@@ -57,6 +57,8 @@ const (
 	RightBrace Type = "}" // }
 
 	If     Type = "if"      // if
+	For    Type = "for"     // for
+	In     Type = "in"      // in
 	ElseIf Type = "else_if" // elseif
 	Else   Type = "else"    // else
 	End    Type = "end"     // end

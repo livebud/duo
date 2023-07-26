@@ -200,3 +200,21 @@ func TestIfStatement(t *testing.T) {
 	equal(t, "", "<h1>{if greeting}hi{else if planet}mars{else if name}world{end}</h1>", `<h1>{if greeting}hi{else}{if planet}mars{else}{if name}world{end}{end}{end}</h1>`)
 	equal(t, "", "<h1>{if greeting}hi{else if planet}mars{else if name}world{else}universe{end}</h1>", `<h1>{if greeting}hi{else}{if planet}mars{else}{if name}world{else}universe{end}{end}{end}</h1>`)
 }
+
+func TestForLoop(t *testing.T) {
+	equal(t, "", "{for item in items}{item}{end}", `{for item in items}{item}{end}`)
+	equal(t, "", "{for item in items}\n{item}\n{end}", `{for item in items}{item}{end}`)
+	equal(t, "", "{for   item    in   items}  \n  {  item  }  \n  {  end  }", `{for item in items}{item}{end}`)
+	equal(t, "", "{for i, item in items}{i}:{item}{end}", `{for i, item in items}{i}:{item}{end}`)
+	equal(t, "", "{for i, item in items}\n{i}:{item}\n{end}", `{for i, item in items}{i}:{item}{end}`)
+	equal(t, "", "{for   i  ,   item   in   items  }  \n  {  i  }:{  item  }\n{  end  }", `{for i, item in items}{i}:{item}{end}`)
+	equal(t, "", "{for 3 in items}{3}{end}", `unexpected token '3'`)
+	equal(t, "", "{for items}{item}{end}", `{for items}{item}{end}`)
+	equal(t, "", "{for   items  }{item}{end}", `{for items}{item}{end}`)
+
+	// equal(t, "", "{for item in items}{item}{else}no items{end}", `{for item in items}{item}{else}no items{end}`)
+	// equal(t, "", "{for item in items}{item}{  else   }no items{end}", `{for item in items}{item}{else}no items{end}`)
+	// equal(t, "", "{for i, item in items}{i}:{item}{else}no items{end}", `{for i, item in items}{i}:{item}{else}no items{end}`)
+	// equal(t, "", "{for i, item in items}{i}:{item}{   else   }no items{end}", `{for i, item in items}{i}:{item}{else}no items{end}`)
+	// equal(t, "", "{for i3, i3tem in items3}{i3}:{i3tem}{else}no items{end}", `{for i3, i3tem in items3}{i3}:{i3tem}{else}no items{end}`)
+}

@@ -22,11 +22,53 @@ type Evaluator struct {
 
 func (e *Evaluator) Evaluate(w io.Writer, v interface{}) error {
 	value := reflect.ValueOf(v)
+	scope, err := toScope(value)
+	if err != nil {
+		return err
+	}
 	evaluator := &evaluator{}
-	if err := evaluator.evaluateDocument(&ioWriter{w}, value, e.doc); err != nil {
+	if err := evaluator.evaluateDocument(&ioWriter{w}, scope, e.doc); err != nil {
 		return err
 	}
 	return nil
+}
+
+func toScope(value reflect.Value) (*scope, error) {
+	values := make(map[string]reflect.Value)
+	// Handles nil
+	if !value.IsValid() {
+		return &scope{
+			values: values,
+		}, nil
+	}
+	switch value.Kind() {
+	case reflect.Map:
+		for _, key := range value.MapKeys() {
+			values[key.String()] = value.MapIndex(key)
+		}
+		return &scope{
+			values: values,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unexpected scope type %s", value.Kind().String())
+	}
+
+}
+
+type scope struct {
+	parent *scope
+	values map[string]reflect.Value
+}
+
+func (s *scope) Lookup(name string) (reflect.Value, bool) {
+	value, ok := s.values[name]
+	if ok {
+		return value, true
+	}
+	if s.parent != nil {
+		return s.parent.Lookup(name)
+	}
+	return reflect.Value{}, false
 }
 
 type evaluator struct {
@@ -56,42 +98,44 @@ type writer interface {
 	WriteByte(b byte) error
 }
 
-func (e *evaluator) evaluateDocument(w writer, scope reflect.Value, node *ast.Document) error {
-	return e.evaluateFragments(w, scope, node.Children...)
+func (e *evaluator) evaluateDocument(w writer, sc *scope, node *ast.Document) error {
+	return e.evaluateFragments(w, sc, node.Children...)
 }
 
-func (e *evaluator) evaluateFragments(w writer, scope reflect.Value, nodes ...ast.Fragment) error {
+func (e *evaluator) evaluateFragments(w writer, sc *scope, nodes ...ast.Fragment) error {
 	for _, node := range nodes {
-		if err := e.evaluateFragment(w, scope, node); err != nil {
+		if err := e.evaluateFragment(w, sc, node); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (e *evaluator) evaluateFragment(w writer, scope reflect.Value, node ast.Fragment) error {
+func (e *evaluator) evaluateFragment(w writer, sc *scope, node ast.Fragment) error {
 	switch n := node.(type) {
 	case *ast.Element:
-		return e.evaluateElement(w, scope, n)
+		return e.evaluateElement(w, sc, n)
 	case *ast.Text:
-		return e.evaluateText(w, scope, n)
+		return e.evaluateText(w, sc, n)
 	case *ast.Mustache:
-		return e.evaluateMustache(w, scope, n)
+		return e.evaluateMustache(w, sc, n)
 	case *ast.Script:
-		return e.evaluateScript(w, scope, n)
+		return e.evaluateScript(w, sc, n)
 	case *ast.IfBlock:
-		return e.evaluateIfBlock(w, scope, n)
+		return e.evaluateIfBlock(w, sc, n)
+	case *ast.ForBlock:
+		return e.evaluateForBlock(w, sc, n)
 	default:
 		return fmt.Errorf("unknown fragment %T", n)
 	}
 }
 
-func (e *evaluator) evaluateElement(w writer, scope reflect.Value, node *ast.Element) error {
+func (e *evaluator) evaluateElement(w writer, sc *scope, node *ast.Element) error {
 	w.WriteByte('<')
 	w.WriteString(node.Name)
 	for _, attr := range node.Attributes {
 		buf := new(bytes.Buffer)
-		if err := e.evaluateAttribute(buf, scope, attr); err != nil {
+		if err := e.evaluateAttribute(buf, sc, attr); err != nil {
 			return err
 		}
 		if buf.Len() > 0 {
@@ -105,7 +149,7 @@ func (e *evaluator) evaluateElement(w writer, scope reflect.Value, node *ast.Ele
 	}
 	w.WriteString(">")
 	for _, child := range node.Children {
-		if err := e.evaluateFragment(w, scope, child); err != nil {
+		if err := e.evaluateFragment(w, sc, child); err != nil {
 			return err
 		}
 	}
@@ -115,29 +159,29 @@ func (e *evaluator) evaluateElement(w writer, scope reflect.Value, node *ast.Ele
 	return nil
 }
 
-func (e *evaluator) evaluateScript(w writer, scope reflect.Value, node *ast.Script) error {
+func (e *evaluator) evaluateScript(w writer, sc *scope, node *ast.Script) error {
 	return nil
 }
 
-func (e *evaluator) evaluateAttribute(w writer, scope reflect.Value, node ast.Attribute) error {
+func (e *evaluator) evaluateAttribute(w writer, sc *scope, node ast.Attribute) error {
 	switch n := node.(type) {
 	case *ast.Field:
-		return e.evaluateField(w, scope, n)
+		return e.evaluateField(w, sc, n)
 	case *ast.AttributeShorthand:
-		return e.evaluateAttributeShorthand(w, scope, n)
+		return e.evaluateAttributeShorthand(w, sc, n)
 	default:
 		return fmt.Errorf("unknown attribute %T", n)
 	}
 }
 
-func (e *evaluator) evaluateField(w writer, scope reflect.Value, node *ast.Field) error {
+func (e *evaluator) evaluateField(w writer, sc *scope, node *ast.Field) error {
 	buf := new(bytes.Buffer)
 	// Skip event handlers
 	if node.EventHandler {
 		return nil
 	}
 	for _, value := range node.Values {
-		if err := e.evaluateValue(buf, scope, value); err != nil {
+		if err := e.evaluateValue(buf, sc, value); err != nil {
 			return err
 		}
 	}
@@ -154,13 +198,13 @@ func (e *evaluator) evaluateField(w writer, scope reflect.Value, node *ast.Field
 	return nil
 }
 
-func (e *evaluator) evaluateAttributeShorthand(w writer, scope reflect.Value, node *ast.AttributeShorthand) error {
+func (e *evaluator) evaluateAttributeShorthand(w writer, sc *scope, node *ast.AttributeShorthand) error {
 	// buf := new(bytes.Buffer)
 	// Skip event handlers
 	if node.EventHandler {
 		return nil
 	}
-	value, err := evaluateExpr(scope, &js.LiteralExpr{
+	value, err := evaluateExpr(sc, &js.LiteralExpr{
 		Data:      []byte(node.Key),
 		TokenType: js.IdentifierToken,
 	})
@@ -179,24 +223,24 @@ func (e *evaluator) evaluateAttributeShorthand(w writer, scope reflect.Value, no
 	return nil
 }
 
-func (e *evaluator) evaluateValue(w writer, scope reflect.Value, node ast.Value) error {
+func (e *evaluator) evaluateValue(w writer, sc *scope, node ast.Value) error {
 	switch n := node.(type) {
 	case *ast.Text:
-		return e.evaluateText(w, scope, n)
+		return e.evaluateText(w, sc, n)
 	case *ast.Mustache:
-		return e.evaluateMustache(w, scope, n)
+		return e.evaluateMustache(w, sc, n)
 	default:
 		return fmt.Errorf("unknown attribute value %T", n)
 	}
 }
 
-func (e *evaluator) evaluateText(w writer, scope reflect.Value, node *ast.Text) error {
+func (e *evaluator) evaluateText(w writer, sc *scope, node *ast.Text) error {
 	w.WriteString(node.Value)
 	return nil
 }
 
-func (e *evaluator) evaluateMustache(w writer, scope reflect.Value, node *ast.Mustache) error {
-	value, err := evaluateExpr(scope, node.Expr)
+func (e *evaluator) evaluateMustache(w writer, sc *scope, node *ast.Mustache) error {
+	value, err := evaluateExpr(sc, node.Expr)
 	if err != nil {
 		return err
 	}
@@ -223,7 +267,7 @@ func (e *evaluator) writeValue(w writer, value reflect.Value) error {
 	}
 }
 
-func evaluateExpr(scope reflect.Value, node js.IExpr) (reflect.Value, error) {
+func evaluateExpr(scope *scope, node js.IExpr) (reflect.Value, error) {
 	switch n := node.(type) {
 	case *js.LiteralExpr:
 		return evaluateLiteralExpr(scope, n)
@@ -238,7 +282,7 @@ func evaluateExpr(scope reflect.Value, node js.IExpr) (reflect.Value, error) {
 	}
 }
 
-func evaluateLiteralExpr(scope reflect.Value, node *js.LiteralExpr) (reflect.Value, error) {
+func evaluateLiteralExpr(scope *scope, node *js.LiteralExpr) (reflect.Value, error) {
 	switch node.TokenType {
 	case js.IdentifierToken:
 		return evaluateIdentifier(scope, node)
@@ -264,7 +308,7 @@ func evaluateLiteralExpr(scope reflect.Value, node *js.LiteralExpr) (reflect.Val
 	}
 }
 
-func evaluateVar(scope reflect.Value, node *js.Var) (reflect.Value, error) {
+func evaluateVar(scope *scope, node *js.Var) (reflect.Value, error) {
 	switch node.Decl {
 	case js.NoDecl:
 		// Since there's no parse expression function, identifiers are considered a non-declared variable
@@ -277,14 +321,11 @@ func evaluateVar(scope reflect.Value, node *js.Var) (reflect.Value, error) {
 	}
 }
 
-func evaluateBinaryExpr(scope reflect.Value, node *js.BinaryExpr) (reflect.Value, error) {
+func evaluateBinaryExpr(scope *scope, node *js.BinaryExpr) (reflect.Value, error) {
 	left, err := evaluateExpr(scope, node.X)
 	if err != nil {
 		return reflect.Value{}, err
 	}
-	// if !left.IsValid() {
-	// 	return reflect.Value{}, fmt.Errorf("%s is undefined", node.X.JS())
-	// }
 	if left.Kind() == reflect.Interface {
 		left = left.Elem()
 	}
@@ -292,9 +333,6 @@ func evaluateBinaryExpr(scope reflect.Value, node *js.BinaryExpr) (reflect.Value
 	if err != nil {
 		return reflect.Value{}, err
 	}
-	// if !right.IsValid() {
-	// 	return reflect.Value{}, fmt.Errorf("%s is undefined", node.Y.JS())
-	// }
 	if right.Kind() == reflect.Interface {
 		right = right.Elem()
 	}
@@ -310,7 +348,7 @@ func evaluateBinaryExpr(scope reflect.Value, node *js.BinaryExpr) (reflect.Value
 	}
 }
 
-func evaluateCondExpr(scope reflect.Value, node *js.CondExpr) (reflect.Value, error) {
+func evaluateCondExpr(scope *scope, node *js.CondExpr) (reflect.Value, error) {
 	cond, err := evaluateExpr(scope, node.Cond)
 	if err != nil {
 		return reflect.Value{}, err
@@ -330,7 +368,7 @@ func evaluateCondExpr(scope reflect.Value, node *js.CondExpr) (reflect.Value, er
 	return evaluateExpr(scope, node.Y)
 }
 
-func evaluateAdd(scope reflect.Value, left, right reflect.Value) (reflect.Value, error) {
+func evaluateAdd(scope *scope, left, right reflect.Value) (reflect.Value, error) {
 	switch left.Kind() {
 	case reflect.String:
 		switch right.Kind() {
@@ -351,7 +389,7 @@ func evaluateAdd(scope reflect.Value, left, right reflect.Value) (reflect.Value,
 	}
 }
 
-func evaluateOr(scope reflect.Value, left, right reflect.Value) (reflect.Value, error) {
+func evaluateOr(scope *scope, left, right reflect.Value) (reflect.Value, error) {
 	switch left.Kind() {
 	case reflect.Bool:
 		if left.Bool() {
@@ -375,7 +413,7 @@ func evaluateOr(scope reflect.Value, left, right reflect.Value) (reflect.Value, 
 	}
 }
 
-func evaluateStrictEqual(scope reflect.Value, left, right reflect.Value) (reflect.Value, error) {
+func evaluateStrictEqual(scope *scope, left, right reflect.Value) (reflect.Value, error) {
 	switch left.Kind() {
 	case reflect.String:
 		switch right.Kind() {
@@ -410,29 +448,24 @@ func evaluateStrictEqual(scope reflect.Value, left, right reflect.Value) (reflec
 	}
 }
 
-func evaluateIdentifier(scope reflect.Value, node *js.LiteralExpr) (reflect.Value, error) {
-	// Handles nil
-	if !scope.IsValid() {
+func evaluateIdentifier(scope *scope, node *js.LiteralExpr) (reflect.Value, error) {
+	value, ok := scope.Lookup(string(node.Data))
+	if !ok {
+		// return reflect.Value{}, fmt.Errorf("identifier %s not found", string(node.Data))
 		return reflect.Value{}, nil
 	}
-	switch scope.Kind() {
-	case reflect.Map:
-		value := scope.MapIndex(reflect.ValueOf(string(node.Data)))
-		return value, nil
-	default:
-		return reflect.Value{}, fmt.Errorf("unexpected scope type %s", scope.Kind().String())
-	}
+	return value, nil
 }
 
-func (e *evaluator) evaluateIfBlock(w writer, scope reflect.Value, node *ast.IfBlock) error {
-	cond, err := evaluateExpr(scope, node.Cond)
+func (e *evaluator) evaluateIfBlock(w writer, sc *scope, node *ast.IfBlock) error {
+	cond, err := evaluateExpr(sc, node.Cond)
 	if err != nil {
 		return err
 	}
 	if isTruthy(cond) {
-		return e.evaluateFragments(w, scope, node.Then...)
+		return e.evaluateFragments(w, sc, node.Then...)
 	}
-	return e.evaluateFragments(w, scope, node.Else...)
+	return e.evaluateFragments(w, sc, node.Else...)
 }
 
 func isTruthy(value reflect.Value) bool {
@@ -450,4 +483,49 @@ func isTruthy(value reflect.Value) bool {
 	default:
 		return false
 	}
+}
+
+func toSlice(value reflect.Value) (reflect.Value, bool) {
+	switch value.Kind() {
+	case reflect.Slice:
+		return value, true
+	case reflect.Interface:
+		return toSlice(value.Elem())
+	default:
+		return value, false
+	}
+}
+
+func (e *evaluator) evaluateForBlock(w writer, sc *scope, node *ast.ForBlock) error {
+	list, err := evaluateExpr(sc, node.List)
+	if err != nil {
+		return err
+	}
+	// Skip over undefined lists
+	if !list.IsValid() {
+		return nil
+	}
+	// Convert the list to a slice
+	slice, ok := toSlice(list)
+	if !ok {
+		return fmt.Errorf("for: must be a slice of values, but got %s", list.Kind())
+	}
+	// Loop over the elements of the slice
+	// TODO: handle maps too
+	for i := 0; i < slice.Len(); i++ {
+		newScope := &scope{
+			parent: sc,
+			values: map[string]reflect.Value{},
+		}
+		if node.Key != nil {
+			newScope.values[string(node.Key.Data)] = reflect.ValueOf(i)
+		}
+		if node.Value != nil {
+			newScope.values[string(node.Value.Data)] = slice.Index(i)
+		}
+		if err := e.evaluateFragments(w, newScope, node.Body...); err != nil {
+			return err
+		}
+	}
+	return nil
 }

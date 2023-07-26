@@ -154,3 +154,12 @@ func TestIf(t *testing.T) {
 	equal(t, "", `<h1>{if greeting}hi{else if planet}mars{else if name}anki{else}bye{end}</h1>`, Map{"name": true}, `<h1>anki</h1>`)
 	equal(t, "", `<h1>{if greeting}hi{else if planet}mars{else if name}anki{else}bye{end}</h1>`, Map{"name": false}, `<h1>bye</h1>`)
 }
+
+func TestFor(t *testing.T) {
+	equal(t, "", `<ul>{for item in items}<li>{item}</li>{end}</ul>`, Map{"items": []string{"a", "b", "c"}}, `<ul><li>a</li><li>b</li><li>c</li></ul>`)
+	equal(t, "", `<ul>{for item in items}<li>{item}</li>{end}</ul>`, Map{"items": []string{}}, `<ul></ul>`)
+	equal(t, "", `<ul>{for item in items}<li>{item}</li>{end}</ul>`, Map{}, `<ul></ul>`)
+	// equal(t, "", `<ul>{for item in items}<li>{item}</li>{else}<li>no items</li>{end}</ul>`, Map{"items": []string{"a", "b", "c"}}, `<ul><li>a</li><li>b</li><li>c</li></ul>`)
+	// equal(t, "", `<ul>{for item in items}<li>{item}</li>{else}<li>no items</li>{end}</ul>`, Map{"items": []string{}}, `<ul><li>no items</li></ul>`)
+	// equal(t, "", `<ul>{for item in items}<li>{item}</li>{else}<li>no items</li>{end}</ul>`, Map{}, `<ul><li>no items</li></ul>`)
+}

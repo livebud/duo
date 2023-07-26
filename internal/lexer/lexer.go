@@ -93,6 +93,14 @@ func (l *Lexer) Peak(nth int) token.Token {
 	return l.peaked[nth-1]
 }
 
+// TODO: replace with an errorf that creates a nice error message
+func (l *Lexer) Latest() token.Token {
+	if len(l.peaked) > 0 {
+		return l.peaked[len(l.peaked)-1]
+	}
+	return l.Token
+}
+
 // Use -1 to indicate the end of the file
 const eof = -1
 
@@ -158,9 +166,18 @@ func (l *Lexer) text() string {
 	return l.input[l.start:l.end]
 }
 
-func (l *Lexer) Move(n int) {
-	l.next += n
-	l.Next()
+func (l *Lexer) stepUntil(rs ...rune) bool {
+	for {
+		if l.cp == eof {
+			return false
+		}
+		for _, r := range rs {
+			if l.cp == r {
+				return true
+			}
+		}
+		l.step()
+	}
 }
 
 func (l *Lexer) peak(n int) string {
@@ -506,6 +523,14 @@ func blockExpressionState(l *Lexer) token.Type {
 				return token.Else
 			}
 			return expressionState(l)
+		case 'f':
+			l.popState()
+			if l.accept('f', 'o', 'r', ' ') {
+				l.pushState(forState)
+				return token.For
+			}
+			l.pushState(expressionState)
+			return expressionState(l)
 		default:
 			l.popState()
 			l.pushState(expressionState)
@@ -587,6 +612,55 @@ func doctypeState(l *Lexer) token.Type {
 			return l.unexpected()
 		}
 	}
+}
+
+func forState(l *Lexer) token.Type {
+	for {
+		switch {
+		case l.cp == eof:
+			l.popState()
+			return l.unexpected()
+		case isSpace(l.cp):
+			l.step()
+			for isSpace(l.cp) {
+				l.step()
+			}
+			l.ignore()
+			continue
+		case l.cp == 'i':
+			if l.accept('i', 'n', ' ') {
+				l.popState()
+				l.pushState(expressionState)
+				return token.In
+			}
+			l.step()
+			if l.stepUntil(' ', ',', '}') {
+				return token.Expr
+			}
+		case isIdentifierHead(l.cp):
+			if l.stepUntil(' ', ',', '}') {
+				return token.Expr
+			}
+		case l.cp == ',':
+			l.step()
+			return token.Comma
+		case l.cp == '}':
+			l.step()
+			l.popState()
+			return token.RightBrace
+		default:
+			l.popState()
+			return l.unexpected()
+		}
+	}
+}
+
+func isIdentifierHead(cp rune) bool {
+	return isAlpha(cp) || cp == '_' || cp == '$'
+}
+
+func isIdentifierBody(cp rune) bool {
+	return isAlphaNumeric(cp) || cp == '_' || cp == '$'
 }
 
 func isAlpha(cp rune) bool {
