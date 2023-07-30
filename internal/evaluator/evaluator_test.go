@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/livebud/duo/internal/evaluator"
-	"github.com/livebud/duo/internal/parser"
+	"github.com/livebud/duo/internal/resolver"
 	"github.com/matthewmueller/diff"
 )
 
@@ -19,22 +19,56 @@ func equal(t *testing.T, path, input string, props interface{}, expected string)
 	}
 	t.Run(path, func(t *testing.T) {
 		t.Helper()
-		doc, err := parser.Parse(path, input)
-		if err != nil {
-			t.Fatal(err)
+		resolver := resolver.Embedded{
+			path: []byte(input),
 		}
-		evaluator := evaluator.New(doc)
+		evaluator := evaluator.New(resolver)
 		str := new(strings.Builder)
 		actual := ""
-		if err := evaluator.Evaluate(str, props); err != nil {
+		if err := evaluator.Evaluate(str, path, props); err != nil {
 			actual = err.Error()
 		} else {
-			// TODO: remove this, this should happen earlier
 			actual = str.String()
-			// actual = strings.TrimSpace(str.String())
-			// actual = strings.ReplaceAll(actual, "  ", "")
-			// actual = strings.ReplaceAll(actual, "\t", "")
-			// actual = strings.ReplaceAll(actual, "\n", "")
+		}
+		if actual == expected {
+			return
+		}
+		var b bytes.Buffer
+		b.WriteString("\n\x1b[4mInput\x1b[0m:\n")
+		b.WriteString(input)
+		b.WriteString("\n\n")
+		b.WriteString("\x1b[4mExpected\x1b[0m:\n")
+		b.WriteString(expected)
+		b.WriteString("\n\n")
+		b.WriteString("\x1b[4mActual\x1b[0m: \n")
+		b.WriteString(actual)
+		b.WriteString("\n\n")
+		b.WriteString("\x1b[4mDifference\x1b[0m: \n")
+		b.WriteString(diff.String(expected, actual))
+		b.WriteString("\n")
+		t.Fatal(b.String())
+	})
+}
+
+func equalFS(t *testing.T, files map[string]string, props interface{}, expected string) {
+	t.Helper()
+	input := files["main.duo"]
+	if input == "" {
+		t.Fatal("missing main.duo")
+	}
+	t.Run(input, func(t *testing.T) {
+		t.Helper()
+		str := new(strings.Builder)
+		actual := ""
+		resolver := resolver.Embedded{}
+		for path, code := range files {
+			resolver[path] = []byte(code)
+		}
+		evaluator := evaluator.New(resolver)
+		if err := evaluator.Evaluate(str, "main.duo", props); err != nil {
+			actual = err.Error()
+		} else {
+			actual = str.String()
 		}
 		if actual == expected {
 			return
@@ -159,7 +193,34 @@ func TestFor(t *testing.T) {
 	equal(t, "", `<ul>{for item in items}<li>{item}</li>{end}</ul>`, Map{"items": []string{"a", "b", "c"}}, `<ul><li>a</li><li>b</li><li>c</li></ul>`)
 	equal(t, "", `<ul>{for item in items}<li>{item}</li>{end}</ul>`, Map{"items": []string{}}, `<ul></ul>`)
 	equal(t, "", `<ul>{for item in items}<li>{item}</li>{end}</ul>`, Map{}, `<ul></ul>`)
-	// equal(t, "", `<ul>{for item in items}<li>{item}</li>{else}<li>no items</li>{end}</ul>`, Map{"items": []string{"a", "b", "c"}}, `<ul><li>a</li><li>b</li><li>c</li></ul>`)
-	// equal(t, "", `<ul>{for item in items}<li>{item}</li>{else}<li>no items</li>{end}</ul>`, Map{"items": []string{}}, `<ul><li>no items</li></ul>`)
-	// equal(t, "", `<ul>{for item in items}<li>{item}</li>{else}<li>no items</li>{end}</ul>`, Map{}, `<ul><li>no items</li></ul>`)
+	equal(t, "", `<ul>{for i, item in items}<li>{i}. {item}</li>{end}</ul>`, Map{"items": []string{"a", "b", "c"}}, `<ul><li>0. a</li><li>1. b</li><li>2. c</li></ul>`)
+	equal(t, "", `<ul>{for i, item in items}<li>{i}. {item}</li>{end}</ul>`, Map{"items": []string{}}, `<ul></ul>`)
+	equal(t, "", `<ul>{for i, item in items}<li>{i}. {item}</li>{end}</ul>`, Map{}, `<ul></ul>`)
+}
+
+func TestComponent(t *testing.T) {
+	equalFS(t, map[string]string{
+		"Component.duo": `<h1>Component</h1>`,
+		"main.duo":      `<script>import Component from "./Component.duo";</script><Component/>`,
+	}, Map{}, `<h1>Component</h1>`)
+	equalFS(t, map[string]string{
+		"component.duo": `<h1>Component</h1>`,
+		"main.duo":      `<script>import Component from "./component.duo";</script><Component/>`,
+	}, Map{}, `<h1>Component</h1>`)
+	equalFS(t, map[string]string{
+		"component.duo": `<h1>{title}</h1>`,
+		"main.duo":      `<script>import Component from "./component.duo";</script><Component title="hello"/>`,
+	}, Map{}, `<h1>hello</h1>`)
+	equalFS(t, map[string]string{
+		"component.duo": `<h1>{title}</h1>`,
+		"main.duo":      `<script>import Component from "./component.duo";</script><Component/>`,
+	}, Map{"title": "hello"}, `<h1></h1>`)
+	equalFS(t, map[string]string{
+		"component.duo": `<h1>{title}</h1>`,
+		"main.duo":      `<script>import Component from "./component.duo";</script><Component />`,
+	}, Map{}, `<h1></h1>`)
+	equalFS(t, map[string]string{
+		"component.duo": `<h1>{title}</h1>`,
+		"main.duo":      `<script>import Component from "./component.duo";</script><Component title={h1}></Component><Component title={h2}/>`,
+	}, Map{"h1": "hi", "h2": "hello"}, `<h1>hi</h1><h1>hello</h1>`)
 }

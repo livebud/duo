@@ -176,21 +176,20 @@ func TestForLoop(t *testing.T) {
 	equal(t, "", "{for i, item in items}{i}:{item}{   else   }no items{end}", `{ for:"for " expr:"i" , expr:"item" in:"in " expr:"items" } { expr:"i" } text:":" { expr:"item" } { else:"   else   " } text:"no items" { end }`)
 	equal(t, "", "{for 3 in items}{3}{end}", `{ for:"for " error:"unexpected token '3'" text:" in items}" { expr:"3" } { end }`)
 	equal(t, "", "{for items}{item}{end}", `{ for:"for " expr:"items" } { expr:"item" } { end }`)
+}
 
-	// equal(t, "", "{for item in items}{item}{else}no items{end}", `{ for:"for " expr:"item" in:"in " expr:"items" } { expr:"item" } { else } text:"no items" { end }`)
-	// equal(t, "", "{for item in items}{item}{  else   }no items{end}", `{ for:"for " expr:"item" in:"in " expr:"items" } { expr:"item" } { else:"  else   " } text:"no items" { end }`)
-	// equal(t, "", "{for i, item in items}{i}:{item}{else}no items{end}", `{ for:"for " expr:"i" , expr:"item" in:"in " expr:"items" } { expr:"i" } text:":" { expr:"item" } { else } text:"no items" { end }`)
-	// equal(t, "", "{for i3, i3tem in items3}{i3}:{i3tem}{else}no items{end}", `{ for:"for " expr:"i3" , expr:"i3tem" in:"in " expr:"items3" } { expr:"i3" } text:":" { expr:"i3tem" } { else } text:"no items" { end }`)
-	// equal(t, "", "{for i, item in items[0]}{i}:{item}{else}no items{end}", `{ for:"for " expr:"i" , expr:"item" in:"in " expr:"items[0]" } { expr:"i" } text:":" { expr:"item" } { else } text:"no items" { end }`)
-	// equal(t, "", "{for i, item in items.a.b}{i}:{item}{else}no items{end}", `{ for:"for " expr:"i" , expr:"item" in:"in " expr:"items.a.b" } { expr:"i" } text:":" { expr:"item" } { else } text:"no items" { end }`)
-	// equal(t, "", "{for items}{item}{else}no items{end}", `{ for:"for " expr:"items" } { expr:"item" } { else } text:"no items" { end }`)
-	// equal(t, "", "{for   items  }{item}{else}no items{end}", `{ for:"for " expr:"items" } { expr:"item" } { else } text:"no items" { end }`)
-	// equal(t, "", "{for items[0]}{item}{end}", `{ for:"for " expr:"items[0]" } { expr:"item" } { end }`)
-	// equal(t, "", "{for   items[0]  }{item}{end}", `{ for:"for " expr:"items[0]" } { expr:"item" } { end }`)
-	// equal(t, "", "{for items.a.c}{item}{end}", `{ for:"for " expr:"items.a.c" } { expr:"item" } { end }`)
-	// equal(t, "", "{for   items.a.c  }{item}{end}", `{ for:"for " expr:"items.a.c" } { expr:"item" } { end }`)
+func TestCustomElement(t *testing.T) {
+	equal(t, "", "<natural-time>", `< dash_identifier:"natural-time" >`)
+	equal(t, "", "<natural-time time=\"12-12-13\">", `< dash_identifier:"natural-time" identifier:"time" = quote:"\"" text:"12-12-13" quote:"\"" >`)
 }
 
 func TestComponent(t *testing.T) {
-	equal(t, "", "<Component/>", `< identifier:"Component" />`)
+	equal(t, "", "<Component/>", `< pascal_identifier:"Component" />`)
+	equal(t, "", "<Component></Component>", `< pascal_identifier:"Component" > </ pascal_identifier:"Component" >`)
+	equal(t, "", "<FirstName/>", `< pascal_identifier:"FirstName" />`)
+	equal(t, "", "<FirstName></FirstName>", `< pascal_identifier:"FirstName" > </ pascal_identifier:"FirstName" >`)
+	equal(t, "", "<H1/>", `< pascal_identifier:"H1" />`)
+	equal(t, "", "<H1>hi</H1>", `< pascal_identifier:"H1" > text:"hi" </ pascal_identifier:"H1" >`)
+	equal(t, "", "<Component a={b} />", `< pascal_identifier:"Component" identifier:"a" = { expr:"b" } />`)
+	equal(t, "", "<FirstName {props} />", `< pascal_identifier:"FirstName" { expr:"props" } />`)
 }

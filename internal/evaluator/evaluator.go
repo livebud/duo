@@ -9,25 +9,42 @@ import (
 	"strings"
 
 	"github.com/livebud/duo/internal/ast"
+	"github.com/livebud/duo/internal/parser"
+	"github.com/livebud/duo/internal/resolver"
+	outscope "github.com/livebud/duo/internal/scope"
 	"github.com/tdewolff/parse/v2/js"
 )
 
-func New(doc *ast.Document) *Evaluator {
-	return &Evaluator{doc}
+func New(resolver resolver.Interface) *Evaluator {
+	return &Evaluator{resolver}
 }
 
 type Evaluator struct {
-	doc *ast.Document
+	resolver resolver.Interface
 }
 
-func (e *Evaluator) Evaluate(w io.Writer, v interface{}) error {
+func (e *Evaluator) Evaluate(w io.Writer, path string, v interface{}) error {
+	file, err := e.resolver.Resolve(&resolver.Resolve{
+		Path: path,
+	})
+	if err != nil {
+		return err
+	}
+	doc, err := parser.Parse(file.Path, string(file.Code))
+	if err != nil {
+		return err
+	}
 	value := reflect.ValueOf(v)
 	scope, err := toScope(value)
 	if err != nil {
 		return err
 	}
-	evaluator := &evaluator{}
-	if err := evaluator.evaluateDocument(&ioWriter{w}, scope, e.doc); err != nil {
+	evaluator := &evaluator{
+		path:     file.Path,
+		scope:    doc.Scope,
+		resolver: e.resolver,
+	}
+	if err := evaluator.evaluateDocument(&ioWriter{w}, scope, doc); err != nil {
 		return err
 	}
 	return nil
@@ -52,7 +69,6 @@ func toScope(value reflect.Value) (*scope, error) {
 	default:
 		return nil, fmt.Errorf("unexpected scope type %s", value.Kind().String())
 	}
-
 }
 
 type scope struct {
@@ -72,6 +88,9 @@ func (s *scope) Lookup(name string) (reflect.Value, bool) {
 }
 
 type evaluator struct {
+	path     string
+	scope    *outscope.Scope
+	resolver resolver.Interface
 }
 
 type ioWriter struct {
@@ -125,6 +144,8 @@ func (e *evaluator) evaluateFragment(w writer, sc *scope, node ast.Fragment) err
 		return e.evaluateIfBlock(w, sc, n)
 	case *ast.ForBlock:
 		return e.evaluateForBlock(w, sc, n)
+	case *ast.Component:
+		return e.evaluateComponent(w, sc, n)
 	default:
 		return fmt.Errorf("unknown fragment %T", n)
 	}
@@ -216,7 +237,7 @@ func (e *evaluator) evaluateAttributeShorthand(w writer, sc *scope, node *ast.At
 	w.WriteString(node.Key)
 	w.WriteByte('=')
 	w.WriteByte('"')
-	if err := e.writeValue(w, value); err != nil {
+	if err := writeValue(w, value); err != nil {
 		return err
 	}
 	w.WriteByte('"')
@@ -244,10 +265,10 @@ func (e *evaluator) evaluateMustache(w writer, sc *scope, node *ast.Mustache) er
 	if err != nil {
 		return err
 	}
-	return e.writeValue(w, value)
+	return writeValue(w, value)
 }
 
-func (e *evaluator) writeValue(w writer, value reflect.Value) error {
+func writeValue(w writer, value reflect.Value) error {
 	if !value.IsValid() {
 		return nil
 	}
@@ -264,6 +285,38 @@ func (e *evaluator) writeValue(w writer, value reflect.Value) error {
 		return nil
 	default:
 		return fmt.Errorf("unexpected value %T", value)
+	}
+}
+
+func evaluateValues(scope *scope, values []ast.Value) (reflect.Value, error) {
+	switch len(values) {
+	case 0:
+		return reflect.Value{}, nil
+	case 1:
+		return evaluateValue(scope, values[0])
+	default:
+		buf := new(bytes.Buffer)
+		for _, value := range values {
+			rv, err := evaluateValue(scope, value)
+			if err != nil {
+				return reflect.Value{}, err
+			}
+			if err := writeValue(buf, rv); err != nil {
+				return reflect.Value{}, err
+			}
+		}
+		return reflect.ValueOf(buf.String()), nil
+	}
+}
+
+func evaluateValue(scope *scope, node ast.Value) (reflect.Value, error) {
+	switch n := node.(type) {
+	case *ast.Text:
+		return reflect.ValueOf(n.Value), nil
+	case *ast.Mustache:
+		return evaluateExpr(scope, n.Expr)
+	default:
+		return reflect.Value{}, fmt.Errorf("unknown attribute value %T", n)
 	}
 }
 
@@ -528,4 +581,52 @@ func (e *evaluator) evaluateForBlock(w writer, sc *scope, node *ast.ForBlock) er
 		}
 	}
 	return nil
+}
+
+func (e *evaluator) evaluateComponent(w writer, sc *scope, node *ast.Component) error {
+	symbol, ok := e.scope.LookupByName(node.Name)
+	if !ok {
+		return fmt.Errorf("component %s not found", node.Name)
+	} else if symbol.Import == nil {
+		return fmt.Errorf("component %s not imported", node.Name)
+	}
+	file, err := e.resolver.Resolve(&resolver.Resolve{
+		From: e.path,
+		Path: symbol.Import.Path,
+	})
+	if err != nil {
+		return err
+	}
+	doc, err := parser.Parse(file.Path, string(file.Code))
+	if err != nil {
+		return err
+	}
+	// Create the component scope
+	props := map[string]interface{}{}
+	for _, attr := range node.Attributes {
+		switch a := attr.(type) {
+		case *ast.AttributeShorthand:
+			value, err := evaluateExpr(sc, &js.LiteralExpr{
+				Data:      []byte(a.Key),
+				TokenType: js.IdentifierToken,
+			})
+			if err != nil {
+				return err
+			}
+			props[a.Key] = value.Interface()
+		case *ast.Field:
+			value, err := evaluateValues(sc, a.Values)
+			if err != nil {
+				return err
+			}
+			props[a.Key] = value.Interface()
+		default:
+			return fmt.Errorf("unknown attribute %T", a)
+		}
+	}
+	componentScope, err := toScope(reflect.ValueOf(props))
+	if err != nil {
+		return err
+	}
+	return e.evaluateDocument(w, componentScope, doc)
 }

@@ -48,23 +48,15 @@ type Fragment interface {
 
 var (
 	_ Fragment = (*Element)(nil)
-	// _ Fragment = (*Component)(nil)
+	_ Fragment = (*Component)(nil)
 	_ Fragment = (*Text)(nil)
 	_ Fragment = (*Mustache)(nil)
 	_ Fragment = (*Comment)(nil)
 	_ Fragment = (*IfBlock)(nil)
 )
 
-type ElementKind int8
-
-const (
-	ElementKindTag ElementKind = iota
-	ElementKindComponent
-)
-
 type Element struct {
 	Name        string
-	Kind        ElementKind
 	Attributes  []Attribute
 	Children    []Fragment
 	SelfClosing bool
@@ -132,10 +124,42 @@ func (e *Script) print(indent string) string {
 	return out.String()
 }
 
-// type Attribute struct {
-// 	Key   string
-// 	Value []Value
-// }
+type Component struct {
+	Name        string
+	Attributes  []Attribute
+	Children    []Fragment
+	SelfClosing bool
+}
+
+func (c *Component) fragment() {}
+
+func (c *Component) Type() string { return "Component" }
+
+func (c *Component) print(indent string) string {
+	out := new(strings.Builder)
+	out.WriteString(indent)
+	out.WriteString("<")
+	out.WriteString(c.Name)
+	for _, attr := range c.Attributes {
+		out.WriteString(" ")
+		out.WriteString(attr.print(" "))
+	}
+	if c.SelfClosing {
+		out.WriteString(" />")
+		return out.String()
+	}
+	out.WriteString(">")
+	if len(c.Children) > 0 {
+		for _, child := range c.Children {
+			out.WriteString(child.print(indent + "\t"))
+		}
+	}
+	out.WriteString(indent)
+	out.WriteString("</")
+	out.WriteString(c.Name)
+	out.WriteString(">")
+	return out.String()
+}
 
 type Attribute interface {
 	Node

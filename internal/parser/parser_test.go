@@ -66,6 +66,7 @@ func equalScope(t *testing.T, path, expected string) {
 		if err.Error() == expected {
 			return
 		}
+		t.Fatal(err)
 	}
 	actual := strings.TrimSpace(ast.Scope.String())
 	expected = dedent.Dedent(expected)
@@ -216,18 +217,20 @@ func TestForLoop(t *testing.T) {
 	equal(t, "", "{for 3 in items}{3}{end}", `unexpected token '3'`)
 	equal(t, "", "{for items}{item}{end}", `{for items}{item}{end}`)
 	equal(t, "", "{for   items  }{item}{end}", `{for items}{item}{end}`)
-
-	// equal(t, "", "{for item in items}{item}{else}no items{end}", `{for item in items}{item}{else}no items{end}`)
-	// equal(t, "", "{for item in items}{item}{  else   }no items{end}", `{for item in items}{item}{else}no items{end}`)
-	// equal(t, "", "{for i, item in items}{i}:{item}{else}no items{end}", `{for i, item in items}{i}:{item}{else}no items{end}`)
-	// equal(t, "", "{for i, item in items}{i}:{item}{   else   }no items{end}", `{for i, item in items}{i}:{item}{else}no items{end}`)
-	// equal(t, "", "{for i3, i3tem in items3}{i3}:{i3tem}{else}no items{end}", `{for i3, i3tem in items3}{i3}:{i3tem}{else}no items{end}`)
 }
 
 func TestComponent(t *testing.T) {
-	equal(t, "1.duo", `<script>import Component from "./Component.duo";</script><Component/>`, `<script>import Component from "./Component.duo"; </script><Component />`)
-	equal(t, "2.duo", `<script>import Component from "./component.duo";</script><Component/>`, `<script>import Component from "./component.duo"; </script><Component />`)
-	equal(t, "3.duo", `<script>import Component from "./component.duo";</script><Component a={b}/>`, `<script>import Component from "./component.duo"; </script><Component a="{b}" />`)
-	equal(t, "4.duo", `<script>import A from "./a.duo"; import B from "./b.duo";</script><A/><B/>`, `<script>import A from "./a.duo"; import B from "./b.duo"; </script><A /><B />`)
-	equal(t, "5.duo", `<script>import A from "./a.duo"; import B from "./b.duo"; import C from './c.duo';</script><A/><B/>`, `<script>import A from "./a.duo"; import B from "./b.duo"; import C from './c.duo'; </script><A /><B />`)
+	equal(t, "", "<Component/>", `<Component />`)
+	equal(t, "", "<Component></Component>", `<Component></Component>`)
+	equal(t, "", "<FirstName/>", `<FirstName />`)
+	equal(t, "", "<FirstName></FirstName>", `<FirstName></FirstName>`)
+	equal(t, "", "<H1/>", `<H1 />`)
+	equal(t, "", "<H1>hi</H1>", `<H1>hi</H1>`)
+	equal(t, "", "<Component a={b} />", `<Component a="{b}" />`)
+	equal(t, "", "<FirstName {props} />", `<FirstName {props} />`)
+	equal(t, "", `<script>import Component from "./Component.duo";</script><Component/>`, `<script>import Component from "./Component.duo"; </script><Component />`)
+	equal(t, "", `<script>import Component from "./component.duo";</script><Component/>`, `<script>import Component from "./component.duo"; </script><Component />`)
+	equal(t, "", `<script>import Component from "./component.duo";</script><Component a={b}/>`, `<script>import Component from "./component.duo"; </script><Component a="{b}" />`)
+	equal(t, "", `<script>import A from "./a.duo"; import B from "./b.duo";</script><A/><B/>`, `<script>import A from "./a.duo"; import B from "./b.duo"; </script><A /><B />`)
+	equal(t, "", `<script>import A from "./a.duo"; import B from "./b.duo"; import C from './c.duo';</script><A/><B/>`, `<script>import A from "./a.duo"; import B from "./b.duo"; import C from './c.duo'; </script><A /><B />`)
 }

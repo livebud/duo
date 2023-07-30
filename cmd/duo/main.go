@@ -19,12 +19,14 @@ import (
 	"github.com/livebud/duo/internal/cli/hot"
 	"github.com/livebud/duo/internal/cli/pubsub"
 	"github.com/livebud/duo/internal/cli/virtual"
+	"github.com/livebud/duo/internal/resolver"
 	"github.com/livebud/watcher"
 	"golang.org/x/sync/errgroup"
 )
 
 func main() {
 	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
@@ -261,21 +263,13 @@ func (s *Serve) Open(name string) (fs.File, error) {
 		return f, nil
 	}
 	defer f.Close()
-	// If we detect HTML, inject the live reload script
-	code, err := io.ReadAll(f)
-	if err != nil {
-		return nil, err
-	}
-	template, err := duo.Parse(name, code)
-	if err != nil {
-		return s.serveError(fi, fmt.Errorf("error parsing %s: %w", name, err))
-	}
 	// Close the existing file because we don't need it anymore
 	if f.Close(); err != nil {
 		return nil, err
 	}
+	template := duo.New(resolver.New(s.Dir))
 	buffer := new(bytes.Buffer)
-	if err := template.Render(buffer, map[string]interface{}{
+	if err := template.Render(buffer, name, map[string]interface{}{
 		"greeting": "hello",
 	}); err != nil {
 		return s.serveError(fi, fmt.Errorf("error rendering %s: %w", name, err))

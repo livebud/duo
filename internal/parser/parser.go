@@ -93,6 +93,8 @@ func (p *Parser) parseTag() (ast.Fragment, error) {
 	// 	return p.parseDoctype()
 	case p.Accept(token.Identifier):
 		return p.parseElement()
+	case p.Accept(token.PascalIdentifier):
+		return p.parseComponent()
 	case p.Accept(token.Script):
 		return p.parseScript()
 	default:
@@ -140,6 +142,57 @@ openTag:
 
 	// Closing tag
 	if err := p.Expect(token.Identifier); err != nil {
+		return nil, err
+	} else if p.Text() != node.Name {
+		return nil, fmt.Errorf("expected closing tag %s, got %s", node.Name, p.Text())
+	}
+	if err := p.Expect(token.GreaterThan); err != nil {
+		return nil, err
+	}
+
+	return node, nil
+}
+
+func (p *Parser) parseComponent() (*ast.Component, error) {
+	node := &ast.Component{
+		Name: p.Text(),
+	}
+
+openTag:
+	for {
+		switch {
+		case p.Accept(token.SlashGreaterThan):
+			node.SelfClosing = true
+			return node, nil
+		case p.Accept(token.GreaterThan):
+			break openTag
+		case p.Accept(token.Identifier):
+			attr, err := p.parseAttribute()
+			if err != nil {
+				return nil, err
+			}
+			node.Attributes = append(node.Attributes, attr)
+		case p.Accept(token.LeftBrace):
+			attr, err := p.parseAttributeShorthand()
+			if err != nil {
+				return nil, err
+			}
+			node.Attributes = append(node.Attributes, attr)
+		default:
+			return nil, p.unexpected("component")
+		}
+	}
+
+	for !p.Accept(token.LessThanSlash) {
+		child, err := p.parseFragment()
+		if err != nil {
+			return nil, err
+		}
+		node.Children = append(node.Children, child)
+	}
+
+	// Closing tag
+	if err := p.Expect(token.PascalIdentifier); err != nil {
 		return nil, err
 	} else if p.Text() != node.Name {
 		return nil, fmt.Errorf("expected closing tag %s, got %s", node.Name, p.Text())

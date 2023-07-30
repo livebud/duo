@@ -265,15 +265,24 @@ func textState(l *Lexer) (t token.Type) {
 
 func startOpenTagState(l *Lexer) token.Type {
 	for {
-
 		switch {
 		case l.cp == eof:
 			l.popState()
 			return l.unexpected()
-		case isAlpha(l.cp):
+		case isLower(l.cp):
 			l.step()
-			for isAlphaNumeric(l.cp) || isDash(l.cp) {
-				l.step()
+			tokenType := token.Identifier
+		tagName:
+			for {
+				switch {
+				case isLowerNumeric(l.cp):
+					l.step()
+				case isDash(l.cp):
+					tokenType = token.DashIdentifier
+					l.step()
+				default:
+					break tagName
+				}
 			}
 			l.popState()
 			l.pushState(middleTagState)
@@ -285,7 +294,15 @@ func startOpenTagState(l *Lexer) token.Type {
 				l.inStyle = true
 				return token.Style
 			}
-			return token.Identifier
+			return tokenType
+		case isUpper(l.cp):
+			l.step()
+			for isAlphaNumeric(l.cp) {
+				l.step()
+			}
+			l.popState()
+			l.pushState(middleTagState)
+			return token.PascalIdentifier
 		case isSpace(l.cp):
 			l.step()
 			for isSpace(l.cp) {
@@ -365,10 +382,20 @@ func startCloseTagState(l *Lexer) token.Type {
 		case l.cp == '/':
 			l.step()
 			return token.Slash
-		case isAlpha(l.cp):
+		case isLower(l.cp):
 			l.step()
-			for isAlphaNumeric(l.cp) || isDash(l.cp) {
-				l.step()
+			tokenType := token.Identifier
+		tagName:
+			for {
+				switch {
+				case isLowerNumeric(l.cp):
+					l.step()
+				case isDash(l.cp):
+					tokenType = token.DashIdentifier
+					l.step()
+				default:
+					break tagName
+				}
 			}
 			switch l.text() {
 			case "script":
@@ -378,7 +405,13 @@ func startCloseTagState(l *Lexer) token.Type {
 				l.inStyle = false
 				return token.Style
 			}
-			return token.Identifier
+			return tokenType
+		case isUpper(l.cp):
+			l.step()
+			for isAlphaNumeric(l.cp) {
+				l.step()
+			}
+			return token.PascalIdentifier
 		case l.cp == '>':
 			l.step()
 			l.popState()
@@ -661,6 +694,18 @@ func isIdentifierHead(cp rune) bool {
 
 func isAlpha(cp rune) bool {
 	return (cp >= 'a' && cp <= 'z') || (cp >= 'A' && cp <= 'Z')
+}
+
+func isLower(cp rune) bool {
+	return cp >= 'a' && cp <= 'z'
+}
+
+func isLowerNumeric(cp rune) bool {
+	return isLower(cp) || (cp >= '0' && cp <= '9')
+}
+
+func isUpper(cp rune) bool {
+	return cp >= 'A' && cp <= 'Z'
 }
 
 func isAlphaNumeric(cp rune) bool {
