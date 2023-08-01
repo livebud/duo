@@ -234,3 +234,11 @@ func TestComponent(t *testing.T) {
 	equal(t, "", `<script>import A from "./a.duo"; import B from "./b.duo";</script><A/><B/>`, `<script>import A from "./a.duo"; import B from "./b.duo"; </script><A /><B />`)
 	equal(t, "", `<script>import A from "./a.duo"; import B from "./b.duo"; import C from './c.duo';</script><A/><B/>`, `<script>import A from "./a.duo"; import B from "./b.duo"; import C from './c.duo'; </script><A /><B />`)
 }
+
+func TestSlot(t *testing.T) {
+	equal(t, "", "<slot/>", `<slot />`)
+	equal(t, "", "<slot  />", `<slot />`)
+	equal(t, "", "<slot  >fallback</slot>", `<slot>fallback</slot>`)
+	equal(t, "", "<slot name=\"value\" ><span>1</span><span>2</span></slot>", `<slot name="value"><span>1</span><span>2</span></slot>`)
+	equal(t, "", "<span slot=\"name\">fallback</span>", `<span slot="name">fallback</span>`)
+}

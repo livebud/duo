@@ -51,33 +51,38 @@ func (e *Evaluator) Evaluate(w io.Writer, path string, v interface{}) error {
 }
 
 func toScope(value reflect.Value) (*scope, error) {
-	values := make(map[string]reflect.Value)
+	scope := newScope()
 	// Handles nil
 	if !value.IsValid() {
-		return &scope{
-			values: values,
-		}, nil
+		return scope, nil
 	}
 	switch value.Kind() {
 	case reflect.Map:
 		for _, key := range value.MapKeys() {
-			values[key.String()] = value.MapIndex(key)
+			scope.props[key.String()] = value.MapIndex(key)
 		}
-		return &scope{
-			values: values,
-		}, nil
+		return scope, nil
 	default:
 		return nil, fmt.Errorf("unexpected scope type %s", value.Kind().String())
 	}
 }
 
+func newScope() *scope {
+	return &scope{
+		props: map[string]reflect.Value{},
+		slots: map[string]strings.Builder{},
+	}
+}
+
 type scope struct {
 	parent *scope
-	values map[string]reflect.Value
+	props  map[string]reflect.Value
+	slot   strings.Builder
+	slots  map[string]strings.Builder
 }
 
 func (s *scope) Lookup(name string) (reflect.Value, bool) {
-	value, ok := s.values[name]
+	value, ok := s.props[name]
 	if ok {
 		return value, true
 	}
@@ -146,6 +151,8 @@ func (e *evaluator) evaluateFragment(w writer, sc *scope, node ast.Fragment) err
 		return e.evaluateForBlock(w, sc, n)
 	case *ast.Component:
 		return e.evaluateComponent(w, sc, n)
+	case *ast.Slot:
+		return e.evaluateSlot(w, sc, n)
 	default:
 		return fmt.Errorf("unknown fragment %T", n)
 	}
@@ -285,6 +292,28 @@ func writeValue(w writer, value reflect.Value) error {
 		return nil
 	default:
 		return fmt.Errorf("unexpected value %T", value)
+	}
+}
+
+func evaluateAttribute(sc *scope, node ast.Attribute) (reflect.Value, error) {
+	switch a := node.(type) {
+	case *ast.AttributeShorthand:
+		value, err := evaluateExpr(sc, &js.LiteralExpr{
+			Data:      []byte(a.Key),
+			TokenType: js.IdentifierToken,
+		})
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		return value, nil
+	case *ast.Field:
+		value, err := evaluateValues(sc, a.Values)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		return value, nil
+	default:
+		return reflect.Value{}, fmt.Errorf("unknown attribute %T", a)
 	}
 }
 
@@ -566,17 +595,15 @@ func (e *evaluator) evaluateForBlock(w writer, sc *scope, node *ast.ForBlock) er
 	// Loop over the elements of the slice
 	// TODO: handle maps too
 	for i := 0; i < slice.Len(); i++ {
-		newScope := &scope{
-			parent: sc,
-			values: map[string]reflect.Value{},
-		}
+		forScope := newScope()
+		forScope.parent = sc
 		if node.Key != nil {
-			newScope.values[string(node.Key.Data)] = reflect.ValueOf(i)
+			forScope.props[string(node.Key.Data)] = reflect.ValueOf(i)
 		}
 		if node.Value != nil {
-			newScope.values[string(node.Value.Data)] = slice.Index(i)
+			forScope.props[string(node.Value.Data)] = slice.Index(i)
 		}
-		if err := e.evaluateFragments(w, newScope, node.Body...); err != nil {
+		if err := e.evaluateFragments(w, forScope, node.Body...); err != nil {
 			return err
 		}
 	}
@@ -601,32 +628,43 @@ func (e *evaluator) evaluateComponent(w writer, sc *scope, node *ast.Component) 
 	if err != nil {
 		return err
 	}
-	// Create the component scope
-	props := map[string]interface{}{}
+	// Build props from attributes
+	componentScope := newScope()
 	for _, attr := range node.Attributes {
-		switch a := attr.(type) {
-		case *ast.AttributeShorthand:
-			value, err := evaluateExpr(sc, &js.LiteralExpr{
-				Data:      []byte(a.Key),
-				TokenType: js.IdentifierToken,
-			})
-			if err != nil {
-				return err
-			}
-			props[a.Key] = value.Interface()
-		case *ast.Field:
-			value, err := evaluateValues(sc, a.Values)
-			if err != nil {
-				return err
-			}
-			props[a.Key] = value.Interface()
+		value, err := evaluateAttribute(sc, attr)
+		if err != nil {
+			return err
+		}
+		// Skip undefined values
+		if !value.IsValid() {
+			continue
+		}
+		componentScope.props[attr.GetKey()] = value
+	}
+	// Build the slots
+	for _, fragment := range node.Children {
+		switch n := fragment.(type) {
+		case *ast.Slot:
+			return fmt.Errorf("named slots not implemented yet")
 		default:
-			return fmt.Errorf("unknown attribute %T", a)
+			if err := e.evaluateFragment(&componentScope.slot, sc, n); err != nil {
+				return err
+			}
 		}
 	}
-	componentScope, err := toScope(reflect.ValueOf(props))
-	if err != nil {
-		return err
-	}
+	// Evaluate the component
 	return e.evaluateDocument(w, componentScope, doc)
+}
+
+func (e *evaluator) evaluateSlot(w writer, sc *scope, node *ast.Slot) error {
+	if node.Name != "" {
+		return fmt.Errorf("named slots not implemented yet")
+	}
+	if sc.slot.Len() == 0 && len(node.Fallback) > 0 {
+		if err := e.evaluateFragments(&sc.slot, sc, node.Fallback...); err != nil {
+			return err
+		}
+	}
+	w.WriteString(sc.slot.String())
+	return nil
 }

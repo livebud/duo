@@ -50,7 +50,7 @@ func equal(t *testing.T, path, input string, props interface{}, expected string)
 	})
 }
 
-func equalFS(t *testing.T, files map[string]string, props interface{}, expected string) {
+func equalMap(t *testing.T, files map[string]string, props interface{}, expected string) {
 	t.Helper()
 	input := files["main.duo"]
 	if input == "" {
@@ -199,28 +199,55 @@ func TestFor(t *testing.T) {
 }
 
 func TestComponent(t *testing.T) {
-	equalFS(t, map[string]string{
+	equalMap(t, map[string]string{
 		"Component.duo": `<h1>Component</h1>`,
 		"main.duo":      `<script>import Component from "./Component.duo";</script><Component/>`,
 	}, Map{}, `<h1>Component</h1>`)
-	equalFS(t, map[string]string{
+	equalMap(t, map[string]string{
 		"component.duo": `<h1>Component</h1>`,
 		"main.duo":      `<script>import Component from "./component.duo";</script><Component/>`,
 	}, Map{}, `<h1>Component</h1>`)
-	equalFS(t, map[string]string{
+	equalMap(t, map[string]string{
 		"component.duo": `<h1>{title}</h1>`,
 		"main.duo":      `<script>import Component from "./component.duo";</script><Component title="hello"/>`,
 	}, Map{}, `<h1>hello</h1>`)
-	equalFS(t, map[string]string{
+	equalMap(t, map[string]string{
 		"component.duo": `<h1>{title}</h1>`,
 		"main.duo":      `<script>import Component from "./component.duo";</script><Component/>`,
 	}, Map{"title": "hello"}, `<h1></h1>`)
-	equalFS(t, map[string]string{
+	equalMap(t, map[string]string{
 		"component.duo": `<h1>{title}</h1>`,
 		"main.duo":      `<script>import Component from "./component.duo";</script><Component />`,
 	}, Map{}, `<h1></h1>`)
-	equalFS(t, map[string]string{
+	equalMap(t, map[string]string{
 		"component.duo": `<h1>{title}</h1>`,
 		"main.duo":      `<script>import Component from "./component.duo";</script><Component title={h1}></Component><Component title={h2}/>`,
 	}, Map{"h1": "hi", "h2": "hello"}, `<h1>hi</h1><h1>hello</h1>`)
+	equalMap(t, map[string]string{
+		"component.duo": `<h1>{title}</h1>`,
+		"main.duo":      `<script>import Component from "./component.duo";</script><Component>hello</Component>`,
+	}, Map{"title": "hi"}, `<h1></h1>`)
+	equalMap(t, map[string]string{
+		"component.duo": `<h1>{title}</h1>`,
+		"main.duo":      `<script>import Component from "./component.duo";</script><Component title={h1}>hello</Component>`,
+	}, Map{"title": "hi"}, `<h1></h1>`)
+}
+
+func TestSlot(t *testing.T) {
+	equalMap(t, map[string]string{
+		"Box.duo":  `<div class="box"><slot /></div>`,
+		"main.duo": `<script>import Box from './Box.duo';</script><Box><h2>Hello!</h2><p>This is a box. It can contain anything.</p></Box>`,
+	}, Map{}, `<div class="box"><h2>Hello!</h2><p>This is a box. It can contain anything.</p></div>`)
+	equalMap(t, map[string]string{
+		"Box.duo":  `<div class="box"></div>`,
+		"main.duo": `<script>import Box from './Box.duo';</script><Box><h2>Hello!</h2><p>This is a box. It can contain anything.</p></Box>`,
+	}, Map{}, `<div class="box"></div>`)
+	equalMap(t, map[string]string{
+		"Box.duo":  `<div class="box"><slot /></div>`,
+		"main.duo": `<script>import Box from './Box.duo';</script><Box></Box>`,
+	}, Map{}, `<div class="box"></div>`)
+	equalMap(t, map[string]string{
+		"Box.duo":  `<div class="box"><slot /></div>`,
+		"main.duo": `<script>import Box from './Box.duo';</script><Box>{title}</Box>`,
+	}, Map{"title": "hi"}, `<div class="box">hi</div>`)
 }

@@ -293,8 +293,11 @@ func startOpenTagState(l *Lexer) token.Type {
 			case "style":
 				l.inStyle = true
 				return token.Style
+			case "slot":
+				return token.Slot
+			default:
+				return tokenType
 			}
-			return tokenType
 		case isUpper(l.cp):
 			l.step()
 			for isAlphaNumeric(l.cp) {
@@ -328,7 +331,12 @@ func middleTagState(l *Lexer) (t token.Type) {
 			for isAlphaNumeric(l.cp) || isDash(l.cp) {
 				l.step()
 			}
-			return token.Identifier
+			switch l.text() {
+			case "slot":
+				return token.Slot
+			default:
+				return token.Identifier
+			}
 		case l.cp == '>':
 			l.step()
 			l.popState()
@@ -404,8 +412,11 @@ func startCloseTagState(l *Lexer) token.Type {
 			case "style":
 				l.inStyle = false
 				return token.Style
+			case "slot":
+				return token.Slot
+			default:
+				return tokenType
 			}
-			return tokenType
 		case isUpper(l.cp):
 			l.step()
 			for isAlphaNumeric(l.cp) {

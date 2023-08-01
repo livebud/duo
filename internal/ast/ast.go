@@ -14,6 +14,9 @@ type Node interface {
 var (
 	_ Node = (*Document)(nil)
 	_ Node = (*Element)(nil)
+	_ Node = (*Component)(nil)
+	_ Node = (*Script)(nil)
+	_ Node = (*AttributeShorthand)(nil)
 	_ Node = (*Field)(nil)
 	_ Node = (*Mustache)(nil)
 	_ Node = (*Text)(nil)
@@ -93,9 +96,10 @@ func (e *Element) print(indent string) string {
 }
 
 type Script struct {
-	Name       string
-	Attributes []Attribute
-	Program    *js.AST
+	Name        string
+	Attributes  []Attribute
+	SelfClosing bool
+	Program     *js.AST
 }
 
 func (e *Script) fragment() {}
@@ -161,20 +165,61 @@ func (c *Component) print(indent string) string {
 	return out.String()
 }
 
+type Slot struct {
+	Name        string // Empty for the default slot
+	SelfClosing bool
+	Fallback    []Fragment
+}
+
+func (s *Slot) fragment() {}
+
+func (s *Slot) Type() string { return "Slot" }
+
+func (s *Slot) print(indent string) string {
+	out := new(strings.Builder)
+	out.WriteString(indent)
+	out.WriteString("<slot")
+	if s.Name != "" {
+		out.WriteString(" name=")
+		out.WriteByte('"')
+		out.WriteString(s.Name)
+		out.WriteByte('"')
+	}
+	if s.SelfClosing {
+		out.WriteString(" />")
+		return out.String()
+	}
+	out.WriteString(">")
+	if len(s.Fallback) > 0 {
+		for _, child := range s.Fallback {
+			out.WriteString(child.print(indent + "\t"))
+		}
+	}
+	out.WriteString(indent)
+	out.WriteString("</slot>")
+	return out.String()
+}
+
 type Attribute interface {
 	Node
+	GetKey() string
 	attribute()
 }
 
 var (
 	_ Attribute = (*Field)(nil)
 	_ Attribute = (*AttributeShorthand)(nil)
+	_ Attribute = (*NamedSlot)(nil)
 )
 
 type Field struct {
 	Key          string
 	Values       []Value
 	EventHandler bool
+}
+
+func (f *Field) GetKey() string {
+	return f.Key
 }
 
 func (f *Field) attribute() {}
@@ -204,10 +249,29 @@ type AttributeShorthand struct {
 
 func (a *AttributeShorthand) attribute() {}
 
+func (a *AttributeShorthand) GetKey() string { return a.Key }
+
 func (a *AttributeShorthand) Type() string { return "AttributeShorthand" }
 
 func (a *AttributeShorthand) print(indent string) string {
 	return "{" + a.Key + "}"
+}
+
+// NamedSlot is a named slot field.
+type NamedSlot struct {
+	Name string
+}
+
+func (s *NamedSlot) attribute() {}
+
+func (s *NamedSlot) Type() string { return "NamedSlot" }
+
+func (s *NamedSlot) GetKey() string {
+	return "slot"
+}
+
+func (s *NamedSlot) print(indent string) string {
+	return s.GetKey() + `="` + s.Name + `"`
 }
 
 type Value interface {

@@ -97,6 +97,8 @@ func (p *Parser) parseTag() (ast.Fragment, error) {
 		return p.parseComponent()
 	case p.Accept(token.Script):
 		return p.parseScript()
+	case p.Accept(token.Slot):
+		return p.parseSlot()
 	default:
 		return nil, p.unexpected("tag")
 	}
@@ -107,29 +109,20 @@ func (p *Parser) parseElement() (*ast.Element, error) {
 		Name: p.Text(),
 	}
 
-openTag:
-	for {
-		switch {
-		case p.Accept(token.SlashGreaterThan):
-			node.SelfClosing = true
-			return node, nil
-		case p.Accept(token.GreaterThan):
-			break openTag
-		case p.Accept(token.Identifier):
-			attr, err := p.parseAttribute()
-			if err != nil {
-				return nil, err
-			}
-			node.Attributes = append(node.Attributes, attr)
-		case p.Accept(token.LeftBrace):
-			attr, err := p.parseAttributeShorthand()
-			if err != nil {
-				return nil, err
-			}
-			node.Attributes = append(node.Attributes, attr)
-		default:
-			return nil, p.unexpected("element")
+	// Handle attributes
+	for !p.Check(token.GreaterThan) && !p.Check(token.SlashGreaterThan) {
+		attr, err := p.parseAttribute()
+		if err != nil {
+			return nil, err
 		}
+		node.Attributes = append(node.Attributes, attr)
+	}
+	if p.Accept(token.SlashGreaterThan) {
+		node.SelfClosing = true
+		return node, nil
+	}
+	if err := p.Expect(token.GreaterThan); err != nil {
+		return nil, err
 	}
 
 	for !p.Accept(token.LessThanSlash) {
@@ -158,29 +151,20 @@ func (p *Parser) parseComponent() (*ast.Component, error) {
 		Name: p.Text(),
 	}
 
-openTag:
-	for {
-		switch {
-		case p.Accept(token.SlashGreaterThan):
-			node.SelfClosing = true
-			return node, nil
-		case p.Accept(token.GreaterThan):
-			break openTag
-		case p.Accept(token.Identifier):
-			attr, err := p.parseAttribute()
-			if err != nil {
-				return nil, err
-			}
-			node.Attributes = append(node.Attributes, attr)
-		case p.Accept(token.LeftBrace):
-			attr, err := p.parseAttributeShorthand()
-			if err != nil {
-				return nil, err
-			}
-			node.Attributes = append(node.Attributes, attr)
-		default:
-			return nil, p.unexpected("component")
+	// Handle attributes
+	for !p.Check(token.GreaterThan) && !p.Check(token.SlashGreaterThan) {
+		attr, err := p.parseAttribute()
+		if err != nil {
+			return nil, err
 		}
+		node.Attributes = append(node.Attributes, attr)
+	}
+	if p.Accept(token.SlashGreaterThan) {
+		node.SelfClosing = true
+		return node, nil
+	}
+	if err := p.Expect(token.GreaterThan); err != nil {
+		return nil, err
 	}
 
 	for !p.Accept(token.LessThanSlash) {
@@ -205,13 +189,22 @@ openTag:
 }
 
 func (p *Parser) parseAttribute() (ast.Attribute, error) {
-	return p.parseField(p.Text())
+	switch {
+	case p.Accept(token.Identifier):
+		return p.parseField()
+	case p.Accept(token.LeftBrace):
+		return p.parseAttributeShorthand()
+	case p.Accept(token.Slot):
+		return p.parseNamedSlot()
+	default:
+		return nil, p.unexpected("attribute")
+	}
 }
 
-func (p *Parser) parseField(key string) (*ast.Field, error) {
+func (p *Parser) parseField() (*ast.Field, error) {
 	field := &ast.Field{
-		Key:          key,
-		EventHandler: event.Is(key),
+		Key:          p.Text(),
+		EventHandler: event.Is(p.Text()),
 	}
 	if err := p.Expect(token.Equal); err != nil {
 		return nil, err
@@ -556,6 +549,24 @@ func (p *Parser) parseAttributeShorthand() (ast.Attribute, error) {
 	}, nil
 }
 
+func (p *Parser) parseNamedSlot() (*ast.NamedSlot, error) {
+	node := &ast.NamedSlot{}
+	if err := p.Expect(token.Equal); err != nil {
+		return nil, err
+	}
+	if err := p.Expect(token.Quote); err != nil {
+		return nil, err
+	}
+	if err := p.Expect(token.Text); err != nil {
+		return nil, err
+	}
+	node.Name = p.Text()
+	if err := p.Expect(token.Quote); err != nil {
+		return nil, err
+	}
+	return node, nil
+}
+
 var options = js.Options{}
 
 func (p *Parser) parseExpression() (js.IExpr, error) {
@@ -585,26 +596,20 @@ func (p *Parser) parseScript() (*ast.Script, error) {
 		Name: p.Text(),
 	}
 
-openTag:
-	for {
-		switch {
-		case p.Accept(token.GreaterThan):
-			break openTag
-		case p.Accept(token.Identifier):
-			attr, err := p.parseAttribute()
-			if err != nil {
-				return nil, err
-			}
-			node.Attributes = append(node.Attributes, attr)
-		case p.Accept(token.LeftBrace):
-			attr, err := p.parseAttributeShorthand()
-			if err != nil {
-				return nil, err
-			}
-			node.Attributes = append(node.Attributes, attr)
-		default:
-			return nil, p.unexpected("element")
+	// Handle attributes
+	for !p.Check(token.GreaterThan) && !p.Check(token.SlashGreaterThan) {
+		attr, err := p.parseAttribute()
+		if err != nil {
+			return nil, err
 		}
+		node.Attributes = append(node.Attributes, attr)
+	}
+	if p.Accept(token.SlashGreaterThan) {
+		node.SelfClosing = true
+		return node, nil
+	}
+	if err := p.Expect(token.GreaterThan); err != nil {
+		return nil, err
 	}
 
 	// Expect the program
@@ -635,6 +640,53 @@ openTag:
 		return nil, err
 	}
 	node.Program = program
+
+	return node, nil
+}
+
+func (p *Parser) parseSlot() (*ast.Slot, error) {
+	node := &ast.Slot{}
+
+	if p.Accept(token.Identifier) {
+		if p.Text() != "name" {
+			return nil, fmt.Errorf("expected slot name, got %s", p.Text())
+		}
+		if err := p.Expect(token.Equal); err != nil {
+			return nil, err
+		}
+		if err := p.Expect(token.Quote); err != nil {
+			return nil, err
+		}
+		if err := p.Expect(token.Text); err != nil {
+			return nil, err
+		}
+		node.Name = p.Text()
+		if err := p.Expect(token.Quote); err != nil {
+			return nil, err
+		}
+	}
+	if p.Accept(token.SlashGreaterThan) {
+		node.SelfClosing = true
+		return node, nil
+	}
+	if err := p.Expect(token.GreaterThan); err != nil {
+		return nil, err
+	}
+	for !p.Accept(token.LessThanSlash) {
+		child, err := p.parseFragment()
+		if err != nil {
+			return nil, err
+		}
+		node.Fallback = append(node.Fallback, child)
+	}
+
+	// Closing tag
+	if err := p.Expect(token.Slot); err != nil {
+		return nil, err
+	}
+	if err := p.Expect(token.GreaterThan); err != nil {
+		return nil, err
+	}
 
 	return node, nil
 }

@@ -52,6 +52,7 @@ const (
 	Expr   Type = "expr"   // Raw expression to be parsed later
 	Script Type = "script" // Script to be parsed later
 	Style  Type = "style"  // Style to be parsed later
+	Slot   Type = "slot"   // Slot to be parsed later
 
 	LeftBrace  Type = "{" // {
 	RightBrace Type = "}" // }

@@ -193,3 +193,12 @@ func TestComponent(t *testing.T) {
 	equal(t, "", "<Component a={b} />", `< pascal_identifier:"Component" identifier:"a" = { expr:"b" } />`)
 	equal(t, "", "<FirstName {props} />", `< pascal_identifier:"FirstName" { expr:"props" } />`)
 }
+
+func TestSlot(t *testing.T) {
+	equal(t, "", "<slot/>", `< slot />`)
+	equal(t, "", "<slot  />", `< slot />`)
+	equal(t, "", "<slot  >fallback</slot>", `< slot > text:"fallback" </ slot >`)
+	equal(t, "", "<slot name=\"email\">fallback</slot>", `< slot identifier:"name" = quote:"\"" text:"email" quote:"\"" > text:"fallback" </ slot >`)
+	equal(t, "", "<slot key=\"value\" >fallback</slot>", `< slot identifier:"key" = quote:"\"" text:"value" quote:"\"" > text:"fallback" </ slot >`)
+	equal(t, "", "<span slot=\"name\">fallback</span>", `< identifier:"span" slot = quote:"\"" text:"name" quote:"\"" > text:"fallback" </ identifier:"span" >`)
+}
