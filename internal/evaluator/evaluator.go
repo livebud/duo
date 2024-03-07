@@ -421,6 +421,8 @@ func evaluateBinaryExpr(scope *scope, node *js.BinaryExpr) (reflect.Value, error
 	switch node.Op {
 	case js.AddToken:
 		return evaluateAdd(scope, left, right)
+	case js.EqEqToken:
+		return evaluateEqual(scope, left, right)
 	case js.EqEqEqToken:
 		return evaluateStrictEqual(scope, left, right)
 	case js.OrToken:
@@ -495,6 +497,58 @@ func evaluateOr(scope *scope, left, right reflect.Value) (reflect.Value, error) 
 	}
 }
 
+var falseValue = reflect.ValueOf(false)
+
+func evaluateEqual(scope *scope, left, right reflect.Value) (reflect.Value, error) {
+	switch left.Kind() {
+	case reflect.String:
+		switch right.Kind() {
+		case reflect.String:
+			return reflect.ValueOf(left.String() == right.String()), nil
+		case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int8, reflect.Int16:
+			rightString := strconv.FormatInt(right.Int(), 10)
+			return reflect.ValueOf(left.String() == rightString), nil
+		default:
+			return falseValue, nil
+		}
+	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int8, reflect.Int16:
+		switch right.Kind() {
+		case reflect.String:
+			leftString := strconv.FormatInt(left.Int(), 10)
+			return reflect.ValueOf(leftString == right.String()), nil
+		case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int8, reflect.Int16:
+			return reflect.ValueOf(left.Int() == right.Int()), nil
+		case reflect.Bool:
+			leftBool := left.Int() > 0
+			return reflect.ValueOf(leftBool == right.Bool()), nil
+		default:
+			return falseValue, nil
+		}
+	case reflect.Bool:
+		switch right.Kind() {
+		case reflect.Bool:
+			return reflect.ValueOf(left.Bool() == right.Bool()), nil
+		case reflect.String:
+			leftString := strconv.FormatBool(left.Bool())
+			return reflect.ValueOf(leftString == right.String()), nil
+		case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int8, reflect.Int16:
+			rightBool := right.Int() > 0
+			return reflect.ValueOf(left.Bool() == rightBool), nil
+		default:
+			return falseValue, nil
+		}
+	case reflect.Invalid:
+		switch right.Kind() {
+		case reflect.Invalid:
+			return reflect.ValueOf(true), nil
+		default:
+			return reflect.ValueOf(false), nil
+		}
+	default:
+		return reflect.Value{}, fmt.Errorf("unexpected left value %s", left.Kind().String())
+	}
+}
+
 func evaluateStrictEqual(scope *scope, left, right reflect.Value) (reflect.Value, error) {
 	switch left.Kind() {
 	case reflect.String:
@@ -502,21 +556,21 @@ func evaluateStrictEqual(scope *scope, left, right reflect.Value) (reflect.Value
 		case reflect.String:
 			return reflect.ValueOf(left.String() == right.String()), nil
 		default:
-			return reflect.Value{}, fmt.Errorf("unexpected right value %s", right.Kind().String())
+			return falseValue, nil
 		}
 	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int8, reflect.Int16:
 		switch right.Kind() {
 		case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int8, reflect.Int16:
 			return reflect.ValueOf(left.Int() == right.Int()), nil
 		default:
-			return reflect.Value{}, fmt.Errorf("unexpected right value %s", right.Kind().String())
+			return falseValue, nil
 		}
 	case reflect.Bool:
 		switch right.Kind() {
 		case reflect.Bool:
 			return reflect.ValueOf(left.Bool() == right.Bool()), nil
 		default:
-			return reflect.Value{}, fmt.Errorf("unexpected right value %s", right.Kind().String())
+			return falseValue, nil
 		}
 	case reflect.Invalid:
 		switch right.Kind() {

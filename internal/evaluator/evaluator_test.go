@@ -119,6 +119,8 @@ func TestSimple(t *testing.T) {
 	equal(t, "attributes", `<hr {name} />`, Map{}, `<hr/>`)
 	// TODO: Should this be `<h1 name></h1>`?
 	equal(t, "attributes", `<h1 name=""></h1>`, Map{}, `<h1></h1>`)
+	equal(t, "number", `<h1>count: {count}!</h1>`, Map{"count": 10}, `<h1>count: 10!</h1>`)
+	equal(t, "number", `<h1>count: {count}!</h1>`, Map{"count": "10"}, `<h1>count: 10!</h1>`)
 }
 
 func TestEventHandler(t *testing.T) {
@@ -250,4 +252,17 @@ func TestSlot(t *testing.T) {
 		"Box.duo":  `<div class="box"><slot /></div>`,
 		"main.duo": `<script>import Box from './Box.duo';</script><Box>{title}</Box>`,
 	}, Map{"title": "hi"}, `<div class="box">hi</div>`)
+}
+
+func TestCoerce(t *testing.T) {
+	equal(t, "", `{count} {count === 1 ? "time" : "times"}`, Map{"count": 10}, `10 times`)
+	equal(t, "", `{count} {count === 1 ? "time" : "times"}`, Map{"count": 1}, `1 time`)
+	equal(t, "", `{count} {count === 1 ? "time" : "times"}`, Map{"count": "1"}, `1 times`)
+	equal(t, "", `{count} {count == 1 ? "time" : "times"}`, Map{"count": "10"}, `10 times`)
+	equal(t, "", `{count} {count == 1 ? "time" : "times"}`, Map{"count": "1"}, `1 time`)
+	equal(t, "", `{count} {1 === count ? "time" : "times"}`, Map{"count": 10}, `10 times`)
+	equal(t, "", `{count} {1 === count ? "time" : "times"}`, Map{"count": 1}, `1 time`)
+	equal(t, "", `{count} {1 === count ? "time" : "times"}`, Map{"count": "1"}, `1 times`)
+	equal(t, "", `{count} {1 == count ? "time" : "times"}`, Map{"count": "10"}, `10 times`)
+	equal(t, "", `{count} {1 == count ? "time" : "times"}`, Map{"count": "1"}, `1 time`)
 }

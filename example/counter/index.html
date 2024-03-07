@@ -1,10 +1,10 @@
 <script>
-  let count = 0;
+  let count = 10
   function increment() {
-    count += 1;
+    count += 1
   }
 </script>
 
 <button onClick={increment}>
-  Clicked {count || 0} {count === 1 ? 'time' : 'times'}
+  Clicked {count} {count == 1 ? "time" : "times"}
 </button>
