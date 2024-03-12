@@ -3,11 +3,10 @@ package dom
 import (
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/livebud/duo/internal/ast"
+	"github.com/livebud/duo/internal/js"
 	"github.com/livebud/duo/internal/scope"
-	"github.com/tdewolff/parse/v2/js"
 )
 
 func Generate(doc *ast.Document) (string, error) {
@@ -15,7 +14,7 @@ func Generate(doc *ast.Document) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(program.JS()) + "\n", nil
+	return js.Print(program) + "\n", nil
 }
 
 func Transform(doc *ast.Document) (*js.AST, error) {
@@ -113,7 +112,7 @@ func (s *script) generateFragment(scope *scope.Scope, node ast.Fragment) (js.IEx
 	}
 }
 
-func (s *script) generateText(scope *scope.Scope, node *ast.Text) (*js.LiteralExpr, error) {
+func (s *script) generateText(_ *scope.Scope, node *ast.Text) (*js.LiteralExpr, error) {
 	// TODO handle escaping & different types of text
 	return &js.LiteralExpr{
 		Data:      []byte(strconv.Quote(node.Value)),
@@ -181,7 +180,7 @@ func (s *script) generateExpr(scope *scope.Scope, node js.IExpr) (js.IExpr, erro
 	}
 }
 
-func generateLiteralExpr(scope *scope.Scope, node *js.LiteralExpr) (js.IExpr, error) {
+func generateLiteralExpr(_ *scope.Scope, node *js.LiteralExpr) (js.IExpr, error) {
 	return node, nil
 }
 
@@ -468,7 +467,7 @@ func (s *script) transformExpr(scope *scope.Scope, node js.IExpr) error {
 	}
 }
 
-func transformVar(scope *scope.Scope, node *js.Var) error {
+func transformVar(_ *scope.Scope, _ *js.Var) error {
 	return nil
 }
 
@@ -479,7 +478,7 @@ func (s *script) transformArrowFunc(scope *scope.Scope, node *js.ArrowFunc) erro
 	return nil
 }
 
-func (s *script) transformLiteralExpr(scope *scope.Scope, node *js.LiteralExpr) error {
+func (s *script) transformLiteralExpr(_ *scope.Scope, _ *js.LiteralExpr) error {
 	return nil
 }
 

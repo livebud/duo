@@ -1,7 +1,6 @@
 package lexer_test
 
 import (
-	"bytes"
 	"testing"
 
 	"github.com/livebud/duo/internal/lexer"
@@ -17,22 +16,7 @@ func equal(t *testing.T, name, input, expected string) {
 	t.Run(name, func(t *testing.T) {
 		t.Helper()
 		actual := lexer.Print(input)
-		if actual == expected {
-			return
-		}
-		var b bytes.Buffer
-		b.WriteString("\n\x1b[4mInput\x1b[0m:\n")
-		b.WriteString(input)
-		b.WriteString("\n\x1b[4mExpected\x1b[0m:\n")
-		b.WriteString(expected)
-		b.WriteString("\n\n")
-		b.WriteString("\x1b[4mActual\x1b[0m: \n")
-		b.WriteString(actual)
-		b.WriteString("\n\n")
-		b.WriteString("\x1b[4mDifference\x1b[0m: \n")
-		b.WriteString(diff.String(expected, actual))
-		b.WriteString("\n")
-		t.Fatal(b.String())
+		diff.TestString(t, actual, expected)
 	})
 }
 
@@ -201,4 +185,13 @@ func TestSlot(t *testing.T) {
 	equal(t, "", "<slot name=\"email\">fallback</slot>", `< slot identifier:"name" = quote:"\"" text:"email" quote:"\"" > text:"fallback" </ slot >`)
 	equal(t, "", "<slot key=\"value\" >fallback</slot>", `< slot identifier:"key" = quote:"\"" text:"value" quote:"\"" > text:"fallback" </ slot >`)
 	equal(t, "", "<span slot=\"name\">fallback</span>", `< identifier:"span" slot = quote:"\"" text:"name" quote:"\"" > text:"fallback" </ identifier:"span" >`)
+}
+
+func TestTypeDefinition(t *testing.T) {
+	equal(t, "", `<script>const a = 'hello';</script>`, `< script > text:"const a = 'hello';" </ script >`)
+	equal(t, "", `<script>const a: string = 'hello';</script>`, `< script > text:"const a: string = 'hello';" </ script >`)
+	equal(t, "", `<script>export let props: Props = []</script>`, `< script > text:"export let props: Props = []" </ script >`)
+	equal(t, "", `<script>import Sub from './04-sub.html';</script>`, `< script > text:"import Sub from './04-sub.html';" </ script >`)
+	equal(t, "", `<script>import type Sub from './04-sub.html';</script>`, `< script > text:"import type Sub from './04-sub.html';" </ script >`)
+	equal(t, "", `<script>import { Sub } from './04-sub.html';</script>`, `< script > text:"import { Sub } from './04-sub.html';" </ script >`)
 }

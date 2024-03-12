@@ -1,7 +1,6 @@
 package evaluator_test
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,23 +29,7 @@ func equal(t *testing.T, path, input string, props interface{}, expected string)
 		} else {
 			actual = str.String()
 		}
-		if actual == expected {
-			return
-		}
-		var b bytes.Buffer
-		b.WriteString("\n\x1b[4mInput\x1b[0m:\n")
-		b.WriteString(input)
-		b.WriteString("\n\n")
-		b.WriteString("\x1b[4mExpected\x1b[0m:\n")
-		b.WriteString(expected)
-		b.WriteString("\n\n")
-		b.WriteString("\x1b[4mActual\x1b[0m: \n")
-		b.WriteString(actual)
-		b.WriteString("\n\n")
-		b.WriteString("\x1b[4mDifference\x1b[0m: \n")
-		b.WriteString(diff.String(expected, actual))
-		b.WriteString("\n")
-		t.Fatal(b.String())
+		diff.TestString(t, actual, expected)
 	})
 }
 
@@ -70,23 +53,7 @@ func equalMap(t *testing.T, files map[string]string, props interface{}, expected
 		} else {
 			actual = str.String()
 		}
-		if actual == expected {
-			return
-		}
-		var b bytes.Buffer
-		b.WriteString("\n\x1b[4mInput\x1b[0m:\n")
-		b.WriteString(input)
-		b.WriteString("\n\n")
-		b.WriteString("\x1b[4mExpected\x1b[0m:\n")
-		b.WriteString(expected)
-		b.WriteString("\n\n")
-		b.WriteString("\x1b[4mActual\x1b[0m: \n")
-		b.WriteString(actual)
-		b.WriteString("\n\n")
-		b.WriteString("\x1b[4mDifference\x1b[0m: \n")
-		b.WriteString(diff.String(expected, actual))
-		b.WriteString("\n")
-		t.Fatal(b.String())
+		diff.TestString(t, actual, expected)
 	})
 }
 
@@ -265,4 +232,8 @@ func TestCoerce(t *testing.T) {
 	equal(t, "", `{count} {1 === count ? "time" : "times"}`, Map{"count": "1"}, `1 times`)
 	equal(t, "", `{count} {1 == count ? "time" : "times"}`, Map{"count": "10"}, `10 times`)
 	equal(t, "", `{count} {1 == count ? "time" : "times"}`, Map{"count": "1"}, `1 time`)
+}
+
+func TestStyle(t *testing.T) {
+	// equal(t, "", `<style></style>`, Map{}, ``)
 }

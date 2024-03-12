@@ -1,7 +1,6 @@
 package dom_test
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,22 +25,7 @@ func equal(t *testing.T, path, input, expected string) {
 		if err != nil {
 			actual = err.Error()
 		}
-		if actual == expected {
-			return
-		}
-		var b bytes.Buffer
-		b.WriteString("\n\x1b[4mInput\x1b[0m:\n")
-		b.WriteString(input)
-		b.WriteString("\n\x1b[4mExpected\x1b[0m:\n")
-		b.WriteString(expected)
-		b.WriteString("\n\n")
-		b.WriteString("\x1b[4mActual\x1b[0m: \n")
-		b.WriteString(actual)
-		b.WriteString("\n\n")
-		b.WriteString("\x1b[4mDifference\x1b[0m: \n")
-		b.WriteString(diff.String(expected, actual))
-		b.WriteString("\n")
-		t.Fatal(b.String())
+		diff.TestString(t, actual, expected)
 	})
 }
 

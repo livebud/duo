@@ -1,7 +1,6 @@
 package parser_test
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,23 +25,7 @@ func equal(t *testing.T, path, input, expected string) {
 		actual = strings.ReplaceAll(actual, "  ", "")
 		actual = strings.ReplaceAll(actual, "\t", "")
 		actual = strings.ReplaceAll(actual, "\n", "")
-		if actual == expected {
-			return
-		}
-		var b bytes.Buffer
-		b.WriteString("\n\x1b[4mInput\x1b[0m:\n")
-		b.WriteString(input)
-		b.WriteString("\n\n")
-		b.WriteString("\x1b[4mExpected\x1b[0m:\n")
-		b.WriteString(expected)
-		b.WriteString("\n\n")
-		b.WriteString("\x1b[4mActual\x1b[0m: \n")
-		b.WriteString(actual)
-		b.WriteString("\n\n")
-		b.WriteString("\x1b[4mDifference\x1b[0m: \n")
-		b.WriteString(diff.String(expected, actual))
-		b.WriteString("\n")
-		t.Fatal(b.String())
+		diff.TestString(t, actual, expected)
 	})
 }
 
@@ -71,23 +54,7 @@ func equalScope(t *testing.T, path, expected string) {
 	actual := strings.TrimSpace(ast.Scope.String())
 	expected = dedent.Dedent(expected)
 	expected = strings.TrimSpace(expected)
-	if actual == expected {
-		return
-	}
-	var b bytes.Buffer
-	b.WriteString("\n\x1b[4mInput\x1b[0m:\n")
-	b.Write(input)
-	b.WriteString("\n\n")
-	b.WriteString("\x1b[4mExpected\x1b[0m:\n")
-	b.WriteString(expected)
-	b.WriteString("\n\n")
-	b.WriteString("\x1b[4mActual\x1b[0m: \n")
-	b.WriteString(actual)
-	b.WriteString("\n\n")
-	b.WriteString("\x1b[4mDifference\x1b[0m: \n")
-	b.WriteString(diff.String(expected, actual))
-	b.WriteString("\n")
-	t.Fatal(b.String())
+	diff.TestString(t, actual, expected)
 }
 
 func TestAPI(t *testing.T) {
@@ -232,7 +199,7 @@ func TestComponent(t *testing.T) {
 	equal(t, "", `<script>import Component from "./component.duo";</script><Component/>`, `<script>import Component from "./component.duo"; </script><Component />`)
 	equal(t, "", `<script>import Component from "./component.duo";</script><Component a={b}/>`, `<script>import Component from "./component.duo"; </script><Component a="{b}" />`)
 	equal(t, "", `<script>import A from "./a.duo"; import B from "./b.duo";</script><A/><B/>`, `<script>import A from "./a.duo"; import B from "./b.duo"; </script><A /><B />`)
-	equal(t, "", `<script>import A from "./a.duo"; import B from "./b.duo"; import C from './c.duo';</script><A/><B/>`, `<script>import A from "./a.duo"; import B from "./b.duo"; import C from './c.duo'; </script><A /><B />`)
+	equal(t, "", `<script>import A from "./a.duo"; import B from "./b.duo"; import C from './c.duo';</script><A/><B/>`, `<script>import A from "./a.duo"; import B from "./b.duo"; import C from "./c.duo"; </script><A /><B />`)
 }
 
 func TestSlot(t *testing.T) {
@@ -242,3 +209,12 @@ func TestSlot(t *testing.T) {
 	equal(t, "", "<slot name=\"value\" ><span>1</span><span>2</span></slot>", `<slot name="value"><span>1</span><span>2</span></slot>`)
 	equal(t, "", "<span slot=\"name\">fallback</span>", `<span slot="name">fallback</span>`)
 }
+
+func TestScript(t *testing.T) {
+	equal(t, "", "<script>let posts = [];</script>", `<script>let posts = []; </script>`)
+	equal(t, "", "<script>let posts: Post[] = [];</script>", `<script>let posts = []; </script>`)
+}
+
+// func TestComment(t *testing.T) {
+// 	equal(t, "", "<!-- this is a comment -->", ``)
+// }

@@ -6,11 +6,10 @@ import (
 
 	"github.com/livebud/duo/internal/ast"
 	"github.com/livebud/duo/internal/event"
+	"github.com/livebud/duo/internal/js"
 	"github.com/livebud/duo/internal/lexer"
 	"github.com/livebud/duo/internal/scope"
 	"github.com/livebud/duo/internal/token"
-	"github.com/tdewolff/parse/v2"
-	"github.com/tdewolff/parse/v2/js"
 )
 
 func Parse(path, input string) (*ast.Document, error) {
@@ -380,7 +379,7 @@ func (p *Parser) parseElseIfBlock() (*ast.IfBlock, error) {
 }
 
 func (p *Parser) parseElseBlock() (fragments []ast.Fragment, err error) {
-	if p.Expect(token.RightBrace); err != nil {
+	if err := p.Expect(token.RightBrace); err != nil {
 		return nil, err
 	}
 	for !p.Check(token.LeftBrace, token.End) {
@@ -567,28 +566,16 @@ func (p *Parser) parseNamedSlot() (*ast.NamedSlot, error) {
 	return node, nil
 }
 
-var options = js.Options{}
-
 func (p *Parser) parseExpression() (js.IExpr, error) {
-	ast, err := js.Parse(parse.NewInputString(p.l.Token.Text), options)
+	expr, err := js.ParseExpr(p.l.Token.Text)
 	if err != nil {
 		return nil, err
 	}
-	blockStmt := ast.BlockStmt
-	stmts := blockStmt.List
-	if len(stmts) != 1 {
-		return nil, fmt.Errorf("expected one statement, got %d", len(stmts))
-	}
-	stmt := stmts[0]
-	es, ok := stmt.(*js.ExprStmt)
-	if !ok {
-		return nil, fmt.Errorf("expected expression statement, got %T", stmt)
-	}
-	// Walk the program to update scope
-	if err := p.walkBlockStatement(p.sc, blockStmt); err != nil {
+	// Walk the expression to update scope
+	if err := p.walkExpr(p.sc, expr); err != nil {
 		return nil, err
 	}
-	return es.Value, nil
+	return expr, nil
 }
 
 func (p *Parser) parseScript() (*ast.Script, error) {
@@ -629,9 +616,8 @@ func (p *Parser) parseScript() (*ast.Script, error) {
 	if err := p.Expect(token.GreaterThan); err != nil {
 		return nil, err
 	}
-
 	// Parse the program
-	program, err := js.Parse(parse.NewInputString(jsCode), options)
+	program, err := js.ParseScript(jsCode)
 	if err != nil {
 		return nil, err
 	}
@@ -640,7 +626,6 @@ func (p *Parser) parseScript() (*ast.Script, error) {
 		return nil, err
 	}
 	node.Program = program
-
 	return node, nil
 }
 
@@ -784,6 +769,8 @@ func (p *Parser) walkExpr(sc *scope.Scope, node js.IExpr) error {
 		return p.walkBinaryExpr(sc, expr)
 	case *js.LiteralExpr:
 		return p.walkLiteralExpr(sc, expr)
+	case *js.ArrayExpr:
+		return p.walkArrayExpr(sc, expr)
 	case *js.CondExpr:
 		return p.walkCondExpr(sc, expr)
 	case *js.ArrowFunc:
@@ -908,7 +895,11 @@ func (p *Parser) walkReturnStmt(sc *scope.Scope, node *js.ReturnStmt) error {
 	return nil
 }
 
-func (p *Parser) walkLiteralExpr(sc *scope.Scope, lit *js.LiteralExpr) error {
+func (p *Parser) walkLiteralExpr(_ *scope.Scope, _ *js.LiteralExpr) error {
+	return nil
+}
+
+func (p *Parser) walkArrayExpr(_ *scope.Scope, _ *js.ArrayExpr) error {
 	return nil
 }
 

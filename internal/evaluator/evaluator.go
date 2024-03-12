@@ -20,11 +20,11 @@ func New(resolver resolver.Interface) *Evaluator {
 }
 
 type Evaluator struct {
-	resolver resolver.Interface
+	Resolver resolver.Interface
 }
 
 func (e *Evaluator) Evaluate(w io.Writer, path string, v interface{}) error {
-	file, err := e.resolver.Resolve(&resolver.Resolve{
+	file, err := e.Resolver.Resolve(&resolver.Resolve{
 		Path: path,
 	})
 	if err != nil {
@@ -42,7 +42,7 @@ func (e *Evaluator) Evaluate(w io.Writer, path string, v interface{}) error {
 	evaluator := &evaluator{
 		path:     file.Path,
 		scope:    doc.Scope,
-		resolver: e.resolver,
+		resolver: e.Resolver,
 	}
 	if err := evaluator.evaluateDocument(&ioWriter{w}, scope, doc); err != nil {
 		return err
@@ -187,7 +187,7 @@ func (e *evaluator) evaluateElement(w writer, sc *scope, node *ast.Element) erro
 	return nil
 }
 
-func (e *evaluator) evaluateScript(w writer, sc *scope, node *ast.Script) error {
+func (e *evaluator) evaluateScript(_ writer, _ *scope, _ *ast.Script) error {
 	return nil
 }
 
@@ -262,7 +262,7 @@ func (e *evaluator) evaluateValue(w writer, sc *scope, node ast.Value) error {
 	}
 }
 
-func (e *evaluator) evaluateText(w writer, sc *scope, node *ast.Text) error {
+func (e *evaluator) evaluateText(w writer, _ *scope, node *ast.Text) error {
 	w.WriteString(node.Value)
 	return nil
 }
@@ -452,7 +452,7 @@ func evaluateCondExpr(scope *scope, node *js.CondExpr) (reflect.Value, error) {
 	return evaluateExpr(scope, node.Y)
 }
 
-func evaluateAdd(scope *scope, left, right reflect.Value) (reflect.Value, error) {
+func evaluateAdd(_ *scope, left, right reflect.Value) (reflect.Value, error) {
 	switch left.Kind() {
 	case reflect.String:
 		switch right.Kind() {
@@ -473,7 +473,7 @@ func evaluateAdd(scope *scope, left, right reflect.Value) (reflect.Value, error)
 	}
 }
 
-func evaluateOr(scope *scope, left, right reflect.Value) (reflect.Value, error) {
+func evaluateOr(_ *scope, left, right reflect.Value) (reflect.Value, error) {
 	switch left.Kind() {
 	case reflect.Bool:
 		if left.Bool() {
@@ -499,7 +499,7 @@ func evaluateOr(scope *scope, left, right reflect.Value) (reflect.Value, error) 
 
 var falseValue = reflect.ValueOf(false)
 
-func evaluateEqual(scope *scope, left, right reflect.Value) (reflect.Value, error) {
+func evaluateEqual(_ *scope, left, right reflect.Value) (reflect.Value, error) {
 	switch left.Kind() {
 	case reflect.String:
 		switch right.Kind() {
@@ -549,7 +549,7 @@ func evaluateEqual(scope *scope, left, right reflect.Value) (reflect.Value, erro
 	}
 }
 
-func evaluateStrictEqual(scope *scope, left, right reflect.Value) (reflect.Value, error) {
+func evaluateStrictEqual(_ *scope, left, right reflect.Value) (reflect.Value, error) {
 	switch left.Kind() {
 	case reflect.String:
 		switch right.Kind() {

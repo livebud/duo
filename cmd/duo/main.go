@@ -21,7 +21,6 @@ import (
 	"github.com/livebud/duo/internal/cli/graceful"
 	"github.com/livebud/duo/internal/cli/hot"
 	"github.com/livebud/duo/internal/cli/pubsub"
-	"github.com/livebud/duo/internal/resolver"
 	"github.com/livebud/watcher"
 	"github.com/matthewmueller/virt"
 	"golang.org/x/sync/errgroup"
@@ -332,9 +331,9 @@ func (f *fileServer) serveView(w http.ResponseWriter, r *http.Request, name stri
 		f.serveError(w, r, err)
 		return
 	}
-	template := duo.New(resolver.New("."))
+	template := duo.New(duo.Input{})
 	buffer := new(bytes.Buffer)
-	props := map[string]string{}
+	props := map[string]any{}
 	values := r.URL.Query()
 	for key := range values {
 		props[key] = values.Get(key)
@@ -436,7 +435,7 @@ func (s *Serve) Open(name string) (fs.File, error) {
 	if err := f.Close(); err != nil {
 		return nil, err
 	}
-	template := duo.New(resolver.New(s.Dir))
+	template := duo.New(duo.Input{})
 	buffer := new(bytes.Buffer)
 	if err := template.Render(buffer, name, map[string]interface{}{
 		"greeting": "hello",
