@@ -36,3 +36,37 @@ func TestSample(t *testing.T) {
 	equal(t, "", `import type Sub from './04-sub.html';`, ``)
 	equal(t, "", `import { Sub } from './04-sub.html';`, `import { Sub } from "./04-sub.html";`)
 }
+
+func TestParse(t *testing.T) {
+	ast, err := js.ParseScript("export let props: Props = []")
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual := js.Print(ast)
+	ast2, err := js.ParseScript2("export let props: Props = []")
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual2 := js.Print(ast2)
+	expect := `export let props = [];`
+	if actual != expect {
+		t.Fatalf("expected %s, got %s", expect, actual)
+	}
+	if actual != actual2 {
+		t.Fatalf("expected %s, got %s", actual, actual2)
+	}
+}
+
+func BenchmarkParse(b *testing.B) {
+	// run the Fib function b.N times
+	for n := 0; n < b.N; n++ {
+		js.ParseScript("export let props: Props = []")
+	}
+}
+
+func BenchmarkParse2(b *testing.B) {
+	// run the Fib function b.N times
+	for n := 0; n < b.N; n++ {
+		js.ParseScript2("export let props: Props = []")
+	}
+}

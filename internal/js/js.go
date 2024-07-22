@@ -60,7 +60,9 @@ var (
 	IdentifierToken = js.IdentifierToken
 )
 
-func parseToString(script string) (string, error) {
+// Parse a script using esbuild's internal packages, which are about 40x faster
+// than using esbuild's public API
+func esbuildInternalParse(script string) (string, error) {
 	log := logger.NewDeferLog(logger.DeferLogNoVerboseOrDebug, nil)
 	tree, ok := js_parser.Parse(log, test.SourceForTest(script), js_parser.OptionsFromConfig(&config.Options{
 		TS: config.TSOptions{
@@ -78,26 +80,6 @@ func parseToString(script string) (string, error) {
 	if !ok {
 		return "", errors.New(text)
 	}
-	// 	// for _, imp := range tree.ImportRecords {
-	// 	// 	fmt.Println(imp.Kind, imp.Path)
-	// 	// }
-	// 	// fmt.Println(tree.ImportRecords)
-	// 	for _, part := range tree.Parts {
-	// 		for _, stmt := range part.Stmts {
-	// 			fmt.Println(valast.String(stmt.Data))
-	// 		}
-	// 	}
-	// 	// for i, symbol := range tree.Symbols {
-	// 	// 	if symbol.UseCountEstimate == 0 {
-	// 	// 		symbol.UseCountEstimate += 10
-	// 	// 	}
-	// 	// 	tree.Symbols[i] = symbol
-	// 	// 	// fmt.Println(symbol.OriginalName, symbol.UseCountEstimate)
-	// 	// 	// if symbol.ImportItemStatus == ast.ImportItemMissing {
-	// 	// 	// 	fmt.Println("ImportItemMissing", symbol.OriginalName)
-	// 	// 	// }
-	// 	// }
-	// 	// fmt.Println(tree.Symbols)
 	symbols := ast.NewSymbolMap(1)
 	symbols.SymbolsForSource[0] = tree.Symbols
 	r := renamer.NewNoOpRenamer(symbols)
@@ -106,23 +88,6 @@ func parseToString(script string) (string, error) {
 		ASCIIOnly:    true,
 	}).JS
 	return string(js), nil
-	// 	// return ast, nil
-	// }
-}
-
-// Parse a script
-
-func ParseScript(script string) (*js.AST, error) {
-	code, err := parseToString(script)
-	if err != nil {
-		return nil, err
-	}
-	// Re-parse the code using the tdewolff/parser
-	ast, err := js.Parse(parse.NewInputString(code), js.Options{})
-	if err != nil {
-		return nil, err
-	}
-	return ast, nil
 }
 
 // Parse a script
@@ -130,16 +95,9 @@ func ParseScript2(script string) (*js.AST, error) {
 	// We use esbuild to parse the JavaScript because it supports Typescript
 	// obviously, this is a bit of a hack, but it works for now
 	result := esbuild.Transform(script, esbuild.TransformOptions{
-		Sourcefile: "script.js",
-		Loader:     esbuild.LoaderTS,
-		// Format:            esbuild.FormatESModule,
-		// TreeShaking:       esbuild.TreeShakingFalse,
-		// Platform:          esbuild.PlatformBrowser,
-		// Target:            esbuild.ESNext,
+		Sourcefile:  "script.js",
+		Loader:      esbuild.LoaderTS,
 		TsconfigRaw: `{ "compilerOptions": { "verbatimModuleSyntax": true } }`,
-		// KeepNames:         true,
-		// MangleProps:       "",
-		// MinifyIdentifiers: false,
 	})
 	if len(result.Errors) > 0 {
 		var errs []error
@@ -150,6 +108,20 @@ func ParseScript2(script string) (*js.AST, error) {
 	}
 	// Re-parse the code using the tdewolff/parser
 	ast, err := js.Parse(parse.NewInputBytes(result.Code), js.Options{})
+	if err != nil {
+		return nil, err
+	}
+	return ast, nil
+}
+
+// Parse a script
+func ParseScript(script string) (*js.AST, error) {
+	code, err := esbuildInternalParse(script)
+	if err != nil {
+		return nil, err
+	}
+	// Re-parse the code using the tdewolff/parser
+	ast, err := js.Parse(parse.NewInputString(code), js.Options{})
 	if err != nil {
 		return nil, err
 	}
@@ -178,4 +150,25 @@ func ParseExpr(contents string) (js.IExpr, error) {
 // Print a JavaScript AST
 func Print(ast js.INode) string {
 	return strings.TrimSpace(ast.JS())
+}
+
+func PrettyPrint(script string) (string, error) {
+	log := logger.NewDeferLog(logger.DeferLogNoVerboseOrDebug, nil)
+	tree, ok := js_parser.Parse(log, test.SourceForTest(script), js_parser.OptionsFromConfig(&config.Options{}))
+	msgs := log.Done()
+	text := ""
+	for _, msg := range msgs {
+		text += msg.String(logger.OutputOptions{}, logger.TerminalInfo{})
+	}
+	if !ok {
+		return "", errors.New(text)
+	}
+	symbols := ast.NewSymbolMap(1)
+	symbols.SymbolsForSource[0] = tree.Symbols
+	r := renamer.NewNoOpRenamer(symbols)
+	js := js_printer.Print(tree, symbols, r, js_printer.Options{
+		OutputFormat: config.FormatPreserve,
+		ASCIIOnly:    true,
+	}).JS
+	return string(js), nil
 }

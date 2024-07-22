@@ -225,7 +225,7 @@ func (s *Serve) openClient(name string) (fs.File, error) {
 		return nil, err
 	}
 	// Close the existing file because we don't need it anymore
-	if f.Close(); err != nil {
+	if err := f.Close(); err != nil {
 		return nil, err
 	}
 	if filepath.Ext(f.Name()) == ".js" {

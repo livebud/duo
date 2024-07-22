@@ -1,1 +1,10 @@
-export default function (h, proxy) { proxy.greeting = proxy.greeting || "hello"; setInterval(() => { proxy.greeting += "o"; }, 500); return (props) => { return h("h1", {}, [props.greeting]); }; };
+export default function(h, proxy) {
+  proxy.greeting = proxy.greeting || "hello";
+  setInterval(() => {
+    proxy.greeting += "o";
+  }, 500);
+  return (props) => {
+    return h("h1", {}, [props.greeting]);
+  };
+}
+;

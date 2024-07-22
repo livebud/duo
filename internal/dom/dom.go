@@ -14,7 +14,11 @@ func Generate(doc *ast.Document) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return js.Print(program) + "\n", nil
+	code, err := js.PrettyPrint(program.JS())
+	if err != nil {
+		return "", err
+	}
+	return code, nil
 }
 
 func Transform(doc *ast.Document) (*js.AST, error) {
