@@ -215,6 +215,6 @@ func TestScript(t *testing.T) {
 	equal(t, "", "<script>let posts: Post[] = [];</script>", `<script>let posts = []; </script>`)
 }
 
-// func TestComment(t *testing.T) {
-// 	equal(t, "", "<!-- this is a comment -->", ``)
-// }
+func TestComment(t *testing.T) {
+	equal(t, "", "<!-- this is a comment -->\n<h2>hello world</h2>", "<!-- this is a comment --><h2>hello world</h2>")
+}

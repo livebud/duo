@@ -66,6 +66,8 @@ func (p *Parser) parseFragment() (ast.Fragment, error) {
 		return p.parseText()
 	case p.Accept(token.LessThan):
 		return p.parseTag()
+	case p.Accept(token.Comment):
+		return p.parseComment()
 	case p.Accept(token.LeftBrace):
 		switch {
 		case p.Accept(token.If):
@@ -674,6 +676,12 @@ func (p *Parser) parseSlot() (*ast.Slot, error) {
 	}
 
 	return node, nil
+}
+
+func (p *Parser) parseComment() (*ast.Comment, error) {
+	return &ast.Comment{
+		Value: p.Text(),
+	}, nil
 }
 
 func (p *Parser) walkBlockStatement(sc *scope.Scope, node js.BlockStmt) error {

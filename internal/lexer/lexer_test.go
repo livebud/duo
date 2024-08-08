@@ -93,6 +93,7 @@ func TestComment(t *testing.T) {
 	equal(t, "", "<h1>hi<!-- Comment -->world</h1>", `< identifier:"h1" > text:"hi" comment:"<!-- Comment -->" text:"world" </ identifier:"h1" >`)
 	equal(t, "", "<h1/><!-- Comment -->", `< identifier:"h1" /> comment:"<!-- Comment -->"`)
 	equal(t, "", "<!-- Comment --><h1/>", `comment:"<!-- Comment -->" < identifier:"h1" />`)
+	equal(t, "", "<!-- Comment -->\n<h1/>", `comment:"<!-- Comment -->" text:"\n" < identifier:"h1" />`)
 	equal(t, "", "<h1 <!-- Comment -->>", `< identifier:"h1" error:"unexpected token '<'" text:"!-- Comment -->>"`)
 }
 

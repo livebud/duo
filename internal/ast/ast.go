@@ -311,6 +311,7 @@ func (t *Text) print(indent string) string {
 }
 
 type Comment struct {
+	Value string
 }
 
 func (c *Comment) fragment() {}
@@ -318,7 +319,7 @@ func (c *Comment) fragment() {}
 func (c *Comment) Type() string { return "Comment" }
 
 func (c *Comment) print(indent string) string {
-	return ""
+	return indent + c.Value
 }
 
 type IfBlock struct {
