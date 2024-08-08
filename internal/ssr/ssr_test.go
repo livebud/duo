@@ -1,4 +1,4 @@
-package evaluator_test
+package ssr_test
 
 import (
 	"os"
@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/livebud/duo/internal/evaluator"
 	"github.com/livebud/duo/internal/resolver"
+	"github.com/livebud/duo/internal/ssr"
 	"github.com/matthewmueller/diff"
 )
 
@@ -21,10 +21,10 @@ func equal(t *testing.T, path, input string, props interface{}, expected string)
 		resolver := resolver.Embedded{
 			path: []byte(input),
 		}
-		evaluator := evaluator.New(resolver)
+		renderer := ssr.New(resolver)
 		str := new(strings.Builder)
 		actual := ""
-		if err := evaluator.Evaluate(str, path, props); err != nil {
+		if err := renderer.Render(str, path, props); err != nil {
 			actual = err.Error()
 		} else {
 			actual = str.String()
@@ -47,8 +47,8 @@ func equalMap(t *testing.T, files map[string]string, props interface{}, expected
 		for path, code := range files {
 			resolver[path] = []byte(code)
 		}
-		evaluator := evaluator.New(resolver)
-		if err := evaluator.Evaluate(str, "main.duo", props); err != nil {
+		renderer := ssr.New(resolver)
+		if err := renderer.Render(str, "main.duo", props); err != nil {
 			actual = err.Error()
 		} else {
 			actual = str.String()

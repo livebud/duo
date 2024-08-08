@@ -5,9 +5,9 @@ import (
 	"net/http"
 
 	"github.com/livebud/duo/internal/dom"
-	"github.com/livebud/duo/internal/evaluator"
 	"github.com/livebud/duo/internal/parser"
 	"github.com/livebud/duo/internal/resolver"
+	"github.com/livebud/duo/internal/ssr"
 )
 
 func Generate(path string, code []byte) (string, error) {
@@ -31,7 +31,7 @@ type Input struct {
 
 func New(in Input) *Template {
 	return &Template{
-		evaluator: &evaluator.Evaluator{
+		evaluator: &ssr.Renderer{
 			Resolver: resolver.New(in.Dir),
 		},
 	}
@@ -46,11 +46,11 @@ func New(in Input) *Template {
 // }
 
 type Template struct {
-	evaluator *evaluator.Evaluator
+	evaluator *ssr.Renderer
 }
 
 func (t *Template) Render(w io.Writer, path string, props map[string]any) error {
-	return t.evaluator.Evaluate(w, path, props)
+	return t.evaluator.Render(w, path, props)
 }
 
 func (t *Template) ServeHTTP(w http.ResponseWriter, r *http.Request) {

@@ -1,4 +1,4 @@
-package evaluator
+package ssr
 
 import (
 	"bytes"
@@ -15,15 +15,15 @@ import (
 	"github.com/tdewolff/parse/v2/js"
 )
 
-func New(resolver resolver.Interface) *Evaluator {
-	return &Evaluator{resolver}
+func New(resolver resolver.Interface) *Renderer {
+	return &Renderer{resolver}
 }
 
-type Evaluator struct {
+type Renderer struct {
 	Resolver resolver.Interface
 }
 
-func (e *Evaluator) Evaluate(w io.Writer, path string, v interface{}) error {
+func (e *Renderer) Render(w io.Writer, path string, v interface{}) error {
 	file, err := e.Resolver.Resolve(&resolver.Resolve{
 		Path: path,
 	})
