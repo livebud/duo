@@ -1,8 +1,0 @@
-{
-  "html.format.enable": false,
-  "html.format.templating": true,
-  "html.format.indentHandlebars": true,
-  "html.format.indentInnerHtml": true,
-  "prettier.enable": false,
-  "editor.formatOnSave": false
-}

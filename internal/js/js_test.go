@@ -9,14 +9,14 @@ import (
 	"github.com/matthewmueller/diff"
 )
 
-func equal(t *testing.T, path, input, expected string) {
+func equalJS(t *testing.T, path, input, expected string) {
 	t.Helper()
 	if path == "" {
 		path = input
 	}
 	t.Run(path, func(t *testing.T) {
 		t.Helper()
-		ast, err := js.ParseScript(input)
+		ast, err := js.ParseScriptJS(input)
 		if err != nil {
 			diff.TestString(t, err.Error(), expected)
 			return
@@ -28,22 +28,22 @@ func equal(t *testing.T, path, input, expected string) {
 	tpl.Execute(os.Stdout, "Hello, World!")
 }
 
-func TestSample(t *testing.T) {
-	equal(t, "", `const a = 'hello';`, `const a = "hello";`)
-	equal(t, "", `const a: string = 'hello';`, `const a = "hello";`)
-	equal(t, "", `export let props: Props = []`, `export let props = [];`)
-	equal(t, "", `import Sub from './04-sub.html';`, `import Sub from "./04-sub.html";`)
-	equal(t, "", `import type Sub from './04-sub.html';`, ``)
-	equal(t, "", `import { Sub } from './04-sub.html';`, `import { Sub } from "./04-sub.html";`)
+func TestSampleJS(t *testing.T) {
+	equalJS(t, "", `const a = 'hello';`, `const a = "hello";`)
+	equalJS(t, "", `const a: string = 'hello';`, `const a = "hello";`)
+	equalJS(t, "", `export let props: Props = []`, `export let props = [];`)
+	equalJS(t, "", `import Sub from './04-sub.html';`, `import Sub from "./04-sub.html";`)
+	equalJS(t, "", `import type Sub from './04-sub.html';`, ``)
+	equalJS(t, "", `import { Sub } from './04-sub.html';`, `import { Sub } from "./04-sub.html";`)
 }
 
 func TestParse(t *testing.T) {
-	ast, err := js.ParseScript("export let props: Props = []")
+	ast, err := js.ParseScriptJS("export let props: Props = []")
 	if err != nil {
 		t.Fatal(err)
 	}
 	actual := js.Print(ast)
-	ast2, err := js.ParseScript2("export let props: Props = []")
+	ast2, err := js.ParseScriptTS("export let props: Props = []")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,16 +57,16 @@ func TestParse(t *testing.T) {
 	}
 }
 
-func BenchmarkParse(b *testing.B) {
+func BenchmarkParseJS(b *testing.B) {
 	// run the Fib function b.N times
 	for n := 0; n < b.N; n++ {
-		js.ParseScript("export let props: Props = []")
+		js.ParseScriptJS("export let props: Props = []")
 	}
 }
 
-func BenchmarkParse2(b *testing.B) {
+func BenchmarkParseTS(b *testing.B) {
 	// run the Fib function b.N times
 	for n := 0; n < b.N; n++ {
-		js.ParseScript2("export let props: Props = []")
+		js.ParseScriptTS("export let props: Props = []")
 	}
 }
