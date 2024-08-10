@@ -39,6 +39,7 @@ const (
 	Equal Type = "=" // =
 	Colon Type = ":" // :
 	Comma Type = "," // ,
+	Hash  Type = "#" // #
 
 	Comment Type = "comment" // <!-- ... -->
 
@@ -57,12 +58,13 @@ const (
 	LeftBrace  Type = "{" // {
 	RightBrace Type = "}" // }
 
-	If     Type = "if"      // if
-	For    Type = "for"     // for
-	In     Type = "in"      // in
-	ElseIf Type = "else_if" // elseif
-	Else   Type = "else"    // else
-	End    Type = "end"     // end
+	If        Type = "if"      // if
+	SlashIf   Type = "/if"     // /if
+	Each      Type = "each"    // each
+	SlashEach Type = "/each"   // /each
+	As        Type = "as"      // as
+	ElseIf    Type = "else_if" // elseif
+	Else      Type = "else"    // else
 
 	Quote Type = "quote" // " or '
 )

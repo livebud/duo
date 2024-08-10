@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/livebud/duo/internal/scope"
+	css "github.com/matthewmueller/css/ast"
 	"github.com/tdewolff/parse/v2/js"
 )
 
@@ -42,6 +43,26 @@ func (d *Document) print(indent string) string {
 		out.WriteByte('\n')
 	}
 	return out.String()
+}
+
+// Style returns the style node if it exists.
+func (d *Document) Style() (*Style, bool) {
+	for _, child := range d.Children {
+		if style, ok := child.(*Style); ok {
+			return style, true
+		}
+	}
+	return nil, false
+}
+
+// Script returns the script node if it exists.
+func (d *Document) Script() (*Script, bool) {
+	for _, child := range d.Children {
+		if script, ok := child.(*Script); ok {
+			return script, true
+		}
+	}
+	return nil, false
 }
 
 type Fragment interface {
@@ -95,8 +116,36 @@ func (e *Element) print(indent string) string {
 	return out.String()
 }
 
+type Style struct {
+	Attributes  []Attribute
+	SelfClosing bool
+	StyleSheet  *css.Stylesheet
+}
+
+func (e *Style) fragment() {}
+
+func (e *Style) Type() string { return "Style" }
+
+func (e *Style) print(indent string) string {
+	out := new(strings.Builder)
+	out.WriteString(indent)
+	out.WriteString("<style")
+	for _, attr := range e.Attributes {
+		out.WriteString(attr.print(" "))
+	}
+	out.WriteString(">")
+	if e.StyleSheet != nil {
+		out.WriteByte('\n')
+		out.WriteString(indent + "\t")
+		out.WriteString(e.StyleSheet.String())
+		out.WriteByte('\n')
+	}
+	out.WriteString(indent)
+	out.WriteString("</style>")
+	return out.String()
+}
+
 type Script struct {
-	Name        string
 	Attributes  []Attribute
 	SelfClosing bool
 	Program     *js.AST
@@ -109,8 +158,7 @@ func (e *Script) Type() string { return "Script" }
 func (e *Script) print(indent string) string {
 	out := new(strings.Builder)
 	out.WriteString(indent)
-	out.WriteString("<")
-	out.WriteString(e.Name)
+	out.WriteString("<script")
 	for _, attr := range e.Attributes {
 		out.WriteString(attr.print(" "))
 	}
@@ -122,9 +170,7 @@ func (e *Script) print(indent string) string {
 		out.WriteByte('\n')
 	}
 	out.WriteString(indent)
-	out.WriteString("</")
-	out.WriteString(e.Name)
-	out.WriteString(">")
+	out.WriteString("</script>")
 	return out.String()
 }
 
@@ -208,6 +254,7 @@ type Attribute interface {
 
 var (
 	_ Attribute = (*Field)(nil)
+	_ Attribute = (*Binding)(nil)
 	_ Attribute = (*AttributeShorthand)(nil)
 	_ Attribute = (*NamedSlot)(nil)
 )
@@ -239,6 +286,50 @@ func (f *Field) print(indent string) string {
 		out.WriteString(v.print(""))
 	}
 	out.WriteByte('"')
+	return out.String()
+}
+
+type Binding struct {
+	Key   string
+	Value Value
+}
+
+func (f *Binding) attribute() {}
+
+func (f *Binding) GetKey() string {
+	return f.Key
+}
+
+func (f *Binding) Type() string { return "Binding" }
+
+func (f *Binding) print(indent string) string {
+	out := new(strings.Builder)
+	out.WriteString("bind:")
+	out.WriteString(f.Key)
+	out.WriteString("=")
+	out.WriteString(f.Value.print(""))
+	return out.String()
+}
+
+type Class struct {
+	Name  string
+	Value Value
+}
+
+func (c *Class) attribute() {}
+
+func (c *Class) GetKey() string {
+	return "class"
+}
+
+func (c *Class) Type() string { return "Class" }
+
+func (c *Class) print(indent string) string {
+	out := new(strings.Builder)
+	out.WriteString("class:")
+	out.WriteString(c.Name)
+	out.WriteString("=")
+	out.WriteString(c.Value.print(""))
 	return out.String()
 }
 
@@ -335,7 +426,7 @@ func (i *IfBlock) Type() string { return "IfBlock" }
 func (i *IfBlock) print(indent string) string {
 	out := new(strings.Builder)
 	out.WriteString(indent)
-	out.WriteString("{if ")
+	out.WriteString("{#if ")
 	out.WriteString(i.Cond.JS())
 	out.WriteString("}")
 	for _, child := range i.Then {
@@ -343,18 +434,18 @@ func (i *IfBlock) print(indent string) string {
 		out.WriteByte('\n')
 	}
 	if len(i.Else) > 0 {
-		out.WriteString("{else}")
+		out.WriteString("{:else}")
 		for _, child := range i.Else {
 			out.WriteString(child.print(indent + "\t"))
 			out.WriteByte('\n')
 		}
 	}
 	out.WriteString(indent)
-	out.WriteString("{end}")
+	out.WriteString("{/if}")
 	return out.String()
 }
 
-type ForBlock struct {
+type EachBlock struct {
 	Key   *js.Var // Can be nil
 	Value *js.Var // Can be nil
 	List  js.IExpr
@@ -362,23 +453,23 @@ type ForBlock struct {
 	Else  []Fragment
 }
 
-func (f *ForBlock) fragment() {}
+func (f *EachBlock) fragment() {}
 
-func (f *ForBlock) Type() string { return "ForBlock" }
+func (f *EachBlock) Type() string { return "EachBlock" }
 
-func (f *ForBlock) print(indent string) string {
+func (f *EachBlock) print(indent string) string {
 	out := new(strings.Builder)
 	out.WriteString(indent)
-	out.WriteString("{for ")
-	if f.Key != nil {
-		out.WriteString(string(f.Key.JS()))
-		out.WriteString(", ")
-	}
-	if f.Value != nil {
-		out.WriteString(string(f.Value.JS()))
-		out.WriteString(" in ")
-	}
+	out.WriteString("{#each ")
 	out.WriteString(f.List.JS())
+	if f.Value != nil {
+		out.WriteString(" as ")
+		out.WriteString(string(f.Value.JS()))
+	}
+	if f.Key != nil {
+		out.WriteString(", ")
+		out.WriteString(string(f.Key.JS()))
+	}
 	out.WriteString("}")
 	for _, child := range f.Body {
 		out.WriteString(child.print(indent + "\t"))
@@ -392,6 +483,6 @@ func (f *ForBlock) print(indent string) string {
 		}
 	}
 	out.WriteString(indent)
-	out.WriteString("{end}")
+	out.WriteString("{/each}")
 	return out.String()
 }

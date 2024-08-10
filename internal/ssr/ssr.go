@@ -145,10 +145,12 @@ func (e *evaluator) evaluateFragment(w writer, sc *scope, node ast.Fragment) err
 		return e.evaluateMustache(w, sc, n)
 	case *ast.Script:
 		return e.evaluateScript(w, sc, n)
+	case *ast.Style:
+		return e.evaluateStyle(w, sc, n)
 	case *ast.IfBlock:
 		return e.evaluateIfBlock(w, sc, n)
-	case *ast.ForBlock:
-		return e.evaluateForBlock(w, sc, n)
+	case *ast.EachBlock:
+		return e.evaluateEachBlock(w, sc, n)
 	case *ast.Component:
 		return e.evaluateComponent(w, sc, n)
 	case *ast.Slot:
@@ -191,10 +193,16 @@ func (e *evaluator) evaluateScript(_ writer, _ *scope, _ *ast.Script) error {
 	return nil
 }
 
+func (e *evaluator) evaluateStyle(_ writer, _ *scope, _ *ast.Style) error {
+	return nil
+}
+
 func (e *evaluator) evaluateAttribute(w writer, sc *scope, node ast.Attribute) error {
 	switch n := node.(type) {
 	case *ast.Field:
 		return e.evaluateField(w, sc, n)
+	case *ast.Binding:
+		return e.evaluateBinding(w, sc, n)
 	case *ast.AttributeShorthand:
 		return e.evaluateAttributeShorthand(w, sc, n)
 	default:
@@ -223,6 +231,17 @@ func (e *evaluator) evaluateField(w writer, sc *scope, node *ast.Field) error {
 		w.Write(buf.Bytes())
 		w.WriteByte('"')
 	}
+	return nil
+}
+
+func (e *evaluator) evaluateBinding(w writer, sc *scope, node *ast.Binding) error {
+	w.WriteString(node.Key)
+	w.WriteByte('=')
+	w.WriteByte('"')
+	if err := e.evaluateValue(w, sc, node.Value); err != nil {
+		return err
+	}
+	w.WriteByte('"')
 	return nil
 }
 
@@ -632,7 +651,7 @@ func toSlice(value reflect.Value) (reflect.Value, bool) {
 	}
 }
 
-func (e *evaluator) evaluateForBlock(w writer, sc *scope, node *ast.ForBlock) error {
+func (e *evaluator) evaluateEachBlock(w writer, sc *scope, node *ast.EachBlock) error {
 	list, err := evaluateExpr(sc, node.List)
 	if err != nil {
 		return err
@@ -644,7 +663,7 @@ func (e *evaluator) evaluateForBlock(w writer, sc *scope, node *ast.ForBlock) er
 	// Convert the list to a slice
 	slice, ok := toSlice(list)
 	if !ok {
-		return fmt.Errorf("for: must be a slice of values, but got %s", list.Kind())
+		return fmt.Errorf("each must be a slice of values, but got %s", list.Kind())
 	}
 	// Loop over the elements of the slice
 	// TODO: handle maps too

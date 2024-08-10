@@ -10,6 +10,7 @@ import (
 	"github.com/livebud/duo/internal/lexer"
 	"github.com/livebud/duo/internal/scope"
 	"github.com/livebud/duo/internal/token"
+	"github.com/matthewmueller/css"
 )
 
 func Parse(path, input string) (*ast.Document, error) {
@@ -40,10 +41,14 @@ func (p *Parser) Parse() (*ast.Document, error) {
 	return p.parseDocument()
 }
 
+func (p *Parser) errorf(format string, args ...interface{}) error {
+	return fmt.Errorf("parser: %s: %s", p.path, fmt.Sprintf(format, args...))
+}
+
 // TODO: this needs to be updated to better handle peaked tokens
 func (p *Parser) unexpected(prefix string) error {
 	token := p.l.Latest()
-	return fmt.Errorf("parser: %s unexpected token %s (%d:%d)", prefix, token.String(), token.Line, token.Start)
+	return p.errorf("%s unexpected token %s (%d:%d)", prefix, token.String(), token.Line, token.Start)
 }
 
 func (p *Parser) parseDocument() (*ast.Document, error) {
@@ -70,10 +75,8 @@ func (p *Parser) parseFragment() (ast.Fragment, error) {
 		return p.parseComment()
 	case p.Accept(token.LeftBrace):
 		switch {
-		case p.Accept(token.If):
-			return p.parseIfBlock()
-		case p.Accept(token.For):
-			return p.parseForBlock()
+		case p.Accept(token.Hash):
+			return p.parseBlock()
 		default:
 			return p.parseMustache()
 		}
@@ -96,6 +99,8 @@ func (p *Parser) parseTag() (ast.Fragment, error) {
 		return p.parseElement()
 	case p.Accept(token.PascalIdentifier):
 		return p.parseComponent()
+	case p.Accept(token.Style):
+		return p.parseStyle()
 	case p.Accept(token.Script):
 		return p.parseScript()
 	case p.Accept(token.Slot):
@@ -138,7 +143,7 @@ func (p *Parser) parseElement() (*ast.Element, error) {
 	if err := p.Expect(token.Identifier); err != nil {
 		return nil, err
 	} else if p.Text() != node.Name {
-		return nil, fmt.Errorf("expected closing tag %s, got %s", node.Name, p.Text())
+		return nil, p.errorf("expected closing tag %s, got %s", node.Name, p.Text())
 	}
 	if err := p.Expect(token.GreaterThan); err != nil {
 		return nil, err
@@ -180,7 +185,7 @@ func (p *Parser) parseComponent() (*ast.Component, error) {
 	if err := p.Expect(token.PascalIdentifier); err != nil {
 		return nil, err
 	} else if p.Text() != node.Name {
-		return nil, fmt.Errorf("expected closing tag %s, got %s", node.Name, p.Text())
+		return nil, p.errorf("expected closing tag %s, got %s", node.Name, p.Text())
 	}
 	if err := p.Expect(token.GreaterThan); err != nil {
 		return nil, err
@@ -192,6 +197,17 @@ func (p *Parser) parseComponent() (*ast.Component, error) {
 func (p *Parser) parseAttribute() (ast.Attribute, error) {
 	switch {
 	case p.Accept(token.Identifier):
+		name := p.Text()
+		if p.Accept(token.Colon) {
+			switch name {
+			case "bind":
+				return p.parseBind()
+			case "class":
+				return p.parseClass()
+			default:
+				return nil, p.unexpected("colon attribute")
+			}
+		}
 		return p.parseField()
 	case p.Accept(token.LeftBrace):
 		return p.parseAttributeShorthand()
@@ -200,6 +216,46 @@ func (p *Parser) parseAttribute() (ast.Attribute, error) {
 	default:
 		return nil, p.unexpected("attribute")
 	}
+}
+
+func (p *Parser) parseBind() (*ast.Binding, error) {
+	node := &ast.Binding{}
+	if err := p.Expect(token.Identifier); err != nil {
+		return nil, err
+	}
+	node.Key = p.Text()
+	if err := p.Expect(token.Equal); err != nil {
+		return nil, err
+	}
+	if err := p.Expect(token.LeftBrace); err != nil {
+		return nil, err
+	}
+	value, err := p.parseMustache()
+	if err != nil {
+		return nil, err
+	}
+	node.Value = value
+	return node, nil
+}
+
+func (p *Parser) parseClass() (*ast.Class, error) {
+	node := &ast.Class{}
+	if err := p.Expect(token.Identifier); err != nil {
+		return nil, err
+	}
+	node.Name = p.Text()
+	if err := p.Expect(token.Equal); err != nil {
+		return nil, err
+	}
+	if err := p.Expect(token.LeftBrace); err != nil {
+		return nil, err
+	}
+	value, err := p.parseMustache()
+	if err != nil {
+		return nil, err
+	}
+	node.Value = value
+	return node, nil
 }
 
 func (p *Parser) parseField() (*ast.Field, error) {
@@ -227,7 +283,7 @@ func (p *Parser) parseField() (*ast.Field, error) {
 }
 
 func (p *Parser) parseAttributeValues() (values []ast.Value, err error) {
-	for !p.Is(token.GreaterThan, token.SlashGreaterThan) {
+	for !p.Is(token.GreaterThan, token.SlashGreaterThan, token.Identifier) {
 		switch {
 		case p.Accept(token.Quote):
 			return p.parseAttributeStringValues()
@@ -296,6 +352,39 @@ func (p *Parser) parseMustache() (*ast.Mustache, error) {
 	return node, nil
 }
 
+func (p *Parser) parseBlock() (ast.Fragment, error) {
+	switch {
+	case p.Accept(token.If):
+		return p.parseIfBlock()
+	case p.Accept(token.Each):
+		return p.parseEachBlock()
+	default:
+		return nil, p.unexpected("block")
+	}
+}
+
+// func (p *Parser) parseCloseBlock() (ast.Fragment, error) {
+// 	switch {
+// 	case p.Accept(token.If):
+// 		return p.parseIfBlock()
+// 	case p.Accept(token.Each):
+// 		return p.parseEachBlock()
+// 	default:
+// 		return nil, p.unexpected("close block")
+// 	}
+// }
+
+// func (p *Parser) parseContinuedBlock() (ast.Fragment, error) {
+// 	switch {
+// 	case p.Accept(token.Else):
+// 		return p.parseElseBlock()
+// 	case p.Accept(token.ElseIf):
+// 		return p.parseElseIfBlock()
+// 	default:
+// 		return nil, p.unexpected("close block")
+// 	}
+// }
+
 func (p *Parser) parseIfBlock() (*ast.IfBlock, error) {
 	node := new(ast.IfBlock)
 	if err := p.Expect(token.Expr); err != nil {
@@ -309,18 +398,18 @@ func (p *Parser) parseIfBlock() (*ast.IfBlock, error) {
 	if err := p.Expect(token.RightBrace); err != nil {
 		return nil, err
 	}
-	for !p.Accept(token.LeftBrace, token.End) {
+	for !p.Accept(token.LeftBrace, token.Slash) {
 		switch {
 		case p.Accept(token.EOF):
-			return nil, fmt.Errorf("unclosed if block")
-		case p.Accept(token.LeftBrace, token.ElseIf):
+			return nil, p.errorf("unclosed if block")
+		case p.Accept(token.LeftBrace, token.Colon, token.ElseIf):
 			ifBlock, err := p.parseElseIfBlock()
 			if err != nil {
 				return nil, err
 			}
 			node.Else = append(node.Else, ifBlock)
 			continue
-		case p.Accept(token.LeftBrace, token.Else):
+		case p.Accept(token.LeftBrace, token.Colon, token.Else):
 			fragments, err := p.parseElseBlock()
 			if err != nil {
 				return nil, err
@@ -334,7 +423,7 @@ func (p *Parser) parseIfBlock() (*ast.IfBlock, error) {
 			node.Then = append(node.Then, fragment)
 		}
 	}
-	if err := p.Expect(token.RightBrace); err != nil {
+	if err := p.Expect(token.If, token.RightBrace); err != nil {
 		return nil, err
 	}
 	return node, nil
@@ -353,17 +442,17 @@ func (p *Parser) parseElseIfBlock() (*ast.IfBlock, error) {
 	if err := p.Expect(token.RightBrace); err != nil {
 		return nil, err
 	}
-	for !p.Check(token.LeftBrace, token.End) {
+	for !p.Check(token.LeftBrace, token.Slash) {
 		switch {
 		case p.Accept(token.EOF):
-			return nil, fmt.Errorf("unclosed if block")
-		case p.Accept(token.LeftBrace, token.ElseIf):
+			return nil, p.errorf("unclosed if block")
+		case p.Accept(token.LeftBrace, token.Colon, token.ElseIf):
 			ifBlock, err := p.parseElseIfBlock()
 			if err != nil {
 				return nil, err
 			}
 			node.Else = append(node.Else, ifBlock)
-		case p.Accept(token.LeftBrace, token.Else):
+		case p.Accept(token.LeftBrace, token.Colon, token.Else):
 			fragments, err := p.parseElseBlock()
 			if err != nil {
 				return nil, err
@@ -384,7 +473,7 @@ func (p *Parser) parseElseBlock() (fragments []ast.Fragment, err error) {
 	if err := p.Expect(token.RightBrace); err != nil {
 		return nil, err
 	}
-	for !p.Check(token.LeftBrace, token.End) {
+	for !p.Check(token.LeftBrace, token.Slash) {
 		fragment, err := p.parseFragment()
 		if err != nil {
 			return nil, err
@@ -394,8 +483,8 @@ func (p *Parser) parseElseBlock() (fragments []ast.Fragment, err error) {
 	return fragments, nil
 }
 
-func (p *Parser) parseForBlock() (*ast.ForBlock, error) {
-	node := new(ast.ForBlock)
+func (p *Parser) parseEachBlock() (*ast.EachBlock, error) {
+	node := new(ast.EachBlock)
 	if err := p.Expect(token.Expr); err != nil {
 		return nil, err
 	}
@@ -403,60 +492,50 @@ func (p *Parser) parseForBlock() (*ast.ForBlock, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Handle {for items}
-	// TODO: cleanup this conditional
-	if p.Accept(token.RightBrace) {
-		node.List = left
-	} else {
-		leftVar, err := exprToVar(left)
+	node.List = left
+
+	// handle as
+	if p.Accept(token.As) {
+		if err := p.Expect(token.Expr); err != nil {
+			return nil, err
+		}
+		middle, err := p.parseExpression()
 		if err != nil {
 			return nil, err
 		}
-		node.Value = leftVar
-		// Handle {for key, value in items}
+		value, err := p.exprToVar(middle)
+		if err != nil {
+			return nil, err
+		}
+		node.Value = value
+
+		// handle key
 		if p.Accept(token.Comma) {
 			if err := p.Expect(token.Expr); err != nil {
 				return nil, err
 			}
-			middle, err := p.parseExpression()
+			right, err := p.parseExpression()
 			if err != nil {
 				return nil, err
 			}
-			middleVar, err := exprToVar(middle)
+			key, err := p.exprToVar(right)
 			if err != nil {
 				return nil, err
 			}
-			node.Key = leftVar
-			node.Value = middleVar
-		}
-		if err := p.Expect(token.In); err != nil {
-			return nil, err
-		}
-		// Parse the expression
-		if err := p.Expect(token.Expr); err != nil {
-			return nil, err
-		}
-		right, err := p.parseExpression()
-		if err != nil {
-			return nil, err
-		}
-		node.List = right
-		// Closing brace
-		if err := p.Expect(token.RightBrace); err != nil {
-			return nil, err
+			node.Key = key
 		}
 	}
+
+	// Closing brace
+	if err := p.Expect(token.RightBrace); err != nil {
+		return nil, err
+	}
+
 	// Parse the body
-	for !p.Accept(token.LeftBrace, token.End) {
+	for !p.Accept(token.LeftBrace, token.Slash) {
 		switch {
 		case p.Accept(token.EOF):
-			return nil, fmt.Errorf("unclosed if block")
-		// case p.Accept(token.LeftBrace, token.Else):
-		// 	fragments, err := p.parseElseBlock()
-		// 	if err != nil {
-		// 		return nil, err
-		// 	}
-		// 	node.Else = append(node.Else, fragments...)
+			return nil, p.errorf("unclosed each block")
 		default:
 			fragment, err := p.parseFragment()
 			if err != nil {
@@ -465,7 +544,9 @@ func (p *Parser) parseForBlock() (*ast.ForBlock, error) {
 			node.Body = append(node.Body, fragment)
 		}
 	}
-	if err := p.Expect(token.RightBrace); err != nil {
+
+	// Closing block
+	if err := p.Expect(token.Each, token.RightBrace); err != nil {
 		return nil, err
 	}
 	return node, nil
@@ -507,9 +588,9 @@ func (p *Parser) Expect(tokens ...token.Type) error {
 	for i, tok := range tokens {
 		peaked := p.l.Peak(i + 1)
 		if peaked.Type == token.Error {
-			return fmt.Errorf(peaked.Text)
+			return p.errorf(peaked.Text)
 		} else if peaked.Type != tok {
-			return fmt.Errorf("expected %s, got %s", tok, peaked.Type)
+			return p.errorf("expected %s, got %s", tok, peaked.Type)
 		}
 	}
 	for i := 0; i < len(tokens); i++ {
@@ -536,7 +617,7 @@ func (p *Parser) parseAttributeShorthand() (ast.Attribute, error) {
 	if err != nil {
 		return nil, err
 	}
-	ident, err := exprToVar(expr)
+	ident, err := p.exprToVar(expr)
 	if err != nil {
 		return nil, err
 	}
@@ -581,9 +662,7 @@ func (p *Parser) parseExpression() (js.IExpr, error) {
 }
 
 func (p *Parser) parseScript() (*ast.Script, error) {
-	node := &ast.Script{
-		Name: p.Text(),
-	}
+	node := &ast.Script{}
 
 	// Handle attributes
 	for !p.Check(token.GreaterThan) && !p.Check(token.SlashGreaterThan) {
@@ -631,12 +710,57 @@ func (p *Parser) parseScript() (*ast.Script, error) {
 	return node, nil
 }
 
+func (p *Parser) parseStyle() (*ast.Style, error) {
+	node := &ast.Style{}
+
+	// Handle attributes
+	for !p.Check(token.GreaterThan) && !p.Check(token.SlashGreaterThan) {
+		attr, err := p.parseAttribute()
+		if err != nil {
+			return nil, err
+		}
+		node.Attributes = append(node.Attributes, attr)
+	}
+	if p.Accept(token.SlashGreaterThan) {
+		node.SelfClosing = true
+		return node, nil
+	}
+	if err := p.Expect(token.GreaterThan); err != nil {
+		return nil, err
+	}
+
+	// Expect the program
+	if err := p.Expect(token.Text); err != nil {
+		return nil, err
+	}
+
+	cssCode := p.Text()
+
+	// Closing tag
+	if err := p.Expect(token.LessThanSlash); err != nil {
+		return nil, err
+	}
+	if err := p.Expect(token.Style); err != nil {
+		return nil, err
+	}
+	if err := p.Expect(token.GreaterThan); err != nil {
+		return nil, err
+	}
+	// Parse the stylesheet
+	stylesheet, err := css.Parse(p.path, cssCode)
+	if err != nil {
+		return nil, err
+	}
+	node.StyleSheet = stylesheet
+	return node, nil
+}
+
 func (p *Parser) parseSlot() (*ast.Slot, error) {
 	node := &ast.Slot{}
 
 	if p.Accept(token.Identifier) {
 		if p.Text() != "name" {
-			return nil, fmt.Errorf("expected slot name, got %s", p.Text())
+			return nil, p.errorf("expected slot name, got %s", p.Text())
 		}
 		if err := p.Expect(token.Equal); err != nil {
 			return nil, err
@@ -708,7 +832,7 @@ func (p *Parser) walkStmt(sc *scope.Scope, node js.IStmt) error {
 	case *js.ReturnStmt:
 		return p.walkReturnStmt(sc, stmt)
 	default:
-		return fmt.Errorf("parser: unexpected statement %T", stmt)
+		return p.errorf("parser: unexpected statement %T", stmt)
 	}
 }
 
@@ -725,7 +849,7 @@ func (p *Parser) walkExportStmt(sc *scope.Scope, node *js.ExportStmt) error {
 		return err
 	}
 	if len(node.List) > 0 {
-		return fmt.Errorf("parser: walk exported aliases not implemented yet")
+		return p.errorf("parser: walk exported aliases not implemented yet")
 	}
 	return nil
 }
@@ -740,7 +864,7 @@ func (p *Parser) walkImportStmt(sc *scope.Scope, node *js.ImportStmt) error {
 		}
 	}
 	if len(node.List) > 0 {
-		return fmt.Errorf("parser: walk imported aliases not implemented yet")
+		return p.errorf("parser: walk imported aliases not implemented yet")
 	}
 	return nil
 }
@@ -787,8 +911,10 @@ func (p *Parser) walkExpr(sc *scope.Scope, node js.IExpr) error {
 		return p.walkUnaryExpr(sc, expr)
 	case *js.GroupExpr:
 		return p.walkGroupExpr(sc, expr)
+	case *js.DotExpr:
+		return p.walkDotExpr(sc, expr)
 	default:
-		return fmt.Errorf("parser: unexpected expression %T", expr)
+		return p.errorf("parser: unexpected expression %T", expr)
 	}
 }
 
@@ -824,7 +950,7 @@ func (p *Parser) walkBinding(sc *scope.Scope, node js.IBinding) error {
 	case *js.Var:
 		return p.walkVar(sc, binding)
 	default:
-		return fmt.Errorf("unexpected binding %T", binding)
+		return p.errorf("unexpected binding %T", binding)
 	}
 }
 
@@ -877,6 +1003,13 @@ func (p *Parser) walkUnaryExpr(sc *scope.Scope, node *js.UnaryExpr) error {
 	return nil
 }
 
+func (p *Parser) walkDotExpr(sc *scope.Scope, node *js.DotExpr) error {
+	if err := p.walkExpr(sc, node.X); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (p *Parser) walkGroupExpr(sc *scope.Scope, node *js.GroupExpr) error {
 	if err := p.walkExpr(sc, node.X); err != nil {
 		return err
@@ -911,10 +1044,10 @@ func (p *Parser) walkArrayExpr(_ *scope.Scope, _ *js.ArrayExpr) error {
 	return nil
 }
 
-func exprToVar(expr js.IExpr) (*js.Var, error) {
+func (p *Parser) exprToVar(expr js.IExpr) (*js.Var, error) {
 	ident, ok := expr.(*js.Var)
 	if !ok {
-		return nil, fmt.Errorf("expected and identifier, got %T", expr)
+		return nil, p.errorf("expected an identifier, got %T", expr)
 	}
 	return ident, nil
 }

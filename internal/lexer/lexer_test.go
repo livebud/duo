@@ -59,7 +59,7 @@ func TestHTML(t *testing.T) {
 	equal(t, "", "<br/>", `< identifier:"br" />`)
 	equal(t, "", "<br />", `< identifier:"br" />`)
 	equal(t, "", "<div class=\"container\"><h2>Title</h2><p>Content</p></div>", `< identifier:"div" identifier:"class" = quote:"\"" text:"container" quote:"\"" > < identifier:"h2" > text:"Title" </ identifier:"h2" > < identifier:"p" > text:"Content" </ identifier:"p" > </ identifier:"div" >`)
-	equal(t, "", "<div id=4", `< identifier:"div" identifier:"id" = text:"4" error:"unexpected end of input"`)
+	equal(t, "", "<div id=4", `< identifier:"div" identifier:"id" = text:"4" error:"lexer: unexpected end of input"`)
 	equal(t, "", "<script>alert('Hello, world!');</script>", `< script > text:"alert('Hello, world!');" </ script >`)
 	equal(t, "", "<script>alert('Hello, world!');</script><h1>hello</h1>", `< script > text:"alert('Hello, world!');" </ script > < identifier:"h1" > text:"hello" </ identifier:"h1" >`)
 	equal(t, "", "<script>alert('Hello,<h1> world!');</script>", `< script > text:"alert('Hello,<h1> world!');" </ script >`)
@@ -85,6 +85,7 @@ func TestHTML(t *testing.T) {
 	equal(t, "", "<a href=\"#section\">Jump to section</a>", `< identifier:"a" identifier:"href" = quote:"\"" text:"#section" quote:"\"" > text:"Jump to section" </ identifier:"a" >`)
 	equal(t, "", "<iframe src=\"https://example.com\" width=\"500\" height=\"300\"></iframe>", `< identifier:"iframe" identifier:"src" = quote:"\"" text:"https://example.com" quote:"\"" identifier:"width" = quote:"\"" text:"500" quote:"\"" identifier:"height" = quote:"\"" text:"300" quote:"\"" > </ identifier:"iframe" >`)
 	equal(t, "", "<meta charset=\"UTF-8\" />", `< identifier:"meta" identifier:"charset" = quote:"\"" text:"UTF-8" quote:"\"" />`)
+	equal(t, "", `<button onclick={addToList} disabled={newItem === ""}>Add</button>`, `< identifier:"button" identifier:"onclick" = { expr:"addToList" } identifier:"disabled" = { expr:"newItem === \"\"" } > text:"Add" </ identifier:"button" >`)
 }
 
 func TestComment(t *testing.T) {
@@ -94,7 +95,7 @@ func TestComment(t *testing.T) {
 	equal(t, "", "<h1/><!-- Comment -->", `< identifier:"h1" /> comment:"<!-- Comment -->"`)
 	equal(t, "", "<!-- Comment --><h1/>", `comment:"<!-- Comment -->" < identifier:"h1" />`)
 	equal(t, "", "<!-- Comment -->\n<h1/>", `comment:"<!-- Comment -->" text:"\n" < identifier:"h1" />`)
-	equal(t, "", "<h1 <!-- Comment -->>", `< identifier:"h1" error:"unexpected token '<'" text:"!-- Comment -->>"`)
+	equal(t, "", "<h1 <!-- Comment -->>", `< identifier:"h1" error:"lexer: unexpected token '<'" text:"!-- Comment -->>"`)
 }
 
 func TestExpression(t *testing.T) {
@@ -134,33 +135,35 @@ func TestEventHandler(t *testing.T) {
 }
 
 func TestIfStatement(t *testing.T) {
-	equal(t, "", "{if x}{x}{end}", `{ if:"if " expr:"x" } { expr:"x" } { end }`)
-	equal(t, "", "{if x}\n{x}\n{end}", `{ if:"if " expr:"x" } text:"\n" { expr:"x" } text:"\n" { end }`)
-	equal(t, "", "{if x > 10}{x}{end}", `{ if:"if " expr:"x > 10" } { expr:"x" } { end }`)
-	equal(t, "", "{if (x > 10)}{x}{end}", `{ if:"if " expr:"(x > 10)" } { expr:"x" } { end }`)
-	equal(t, "", "{  if x > 10   }{  x   }{   end   }", `{ if:"  if " expr:"x > 10   " } { expr:"  x   " } { end:"   end   " }`)
-	equal(t, "", "{if x}{x}{else if y}{y}{end}", `{ if:"if " expr:"x" } { expr:"x" } { else_if:"else if " expr:"y" } { expr:"y" } { end }`)
-	equal(t, "", "{if x}{x}{else if (y)}{y}{end}", `{ if:"if " expr:"x" } { expr:"x" } { else_if:"else if " expr:"(y)" } { expr:"y" } { end }`)
-	equal(t, "", "{if x}\n{x}\n{else if y}\n{y}\n{end}", `{ if:"if " expr:"x" } text:"\n" { expr:"x" } text:"\n" { else_if:"else if " expr:"y" } text:"\n" { expr:"y" } text:"\n" { end }`)
-	equal(t, "", "{   if x   }{x}{    else if y  }{y}{   end  }", `{ if:"   if " expr:"x   " } { expr:"x" } { else_if:"    else if " expr:"y  " } { expr:"y" } { end:"   end  " }`)
-	equal(t, "", "{if x == 10}{x}{else if y > 10}{y}{end}", `{ if:"if " expr:"x == 10" } { expr:"x" } { else_if:"else if " expr:"y > 10" } { expr:"y" } { end }`)
-	equal(t, "", "{if x == 10}{x}{else if (y > 10)}{y}{end}", `{ if:"if " expr:"x == 10" } { expr:"x" } { else_if:"else if " expr:"(y > 10)" } { expr:"y" } { end }`)
-	equal(t, "", "{if x == 10}{x}{else if y > 10}{y}{else}none{end}", `{ if:"if " expr:"x == 10" } { expr:"x" } { else_if:"else if " expr:"y > 10" } { expr:"y" } { else } text:"none" { end }`)
-	equal(t, "", "{  if     x   ==   10  }{  x  }{   else    if    y > 10   }{  y   }{   else   }none{   end   }", `{ if:"  if " expr:"    x   ==   10  " } { expr:"  x  " } { else_if:"   else    if " expr:"   y > 10   " } { expr:"  y   " } { else:"   else   " } text:"none" { end:"   end   " }`)
-	equal(t, "", "{if x}{x}{else}{y}{end}", `{ if:"if " expr:"x" } { expr:"x" } { else } { expr:"y" } { end }`)
-	equal(t, "", "<h1>{if greeting}hi{else if planet}mars{end}</h1>", `< identifier:"h1" > { if:"if " expr:"greeting" } text:"hi" { else_if:"else if " expr:"planet" } text:"mars" { end } </ identifier:"h1" >`)
+	equal(t, "", "{#if x}{x}{/if}", `{ # if:"if " expr:"x" } { expr:"x" } { / if }`)
+	equal(t, "", "{#if x}\n{x}\n{/if}", `{ # if:"if " expr:"x" } text:"\n" { expr:"x" } text:"\n" { / if }`)
+	equal(t, "", "{#if x > 10}{x}{/if}", `{ # if:"if " expr:"x > 10" } { expr:"x" } { / if }`)
+	equal(t, "", "{#if (x > 10)}{x}{/if}", `{ # if:"if " expr:"(x > 10)" } { expr:"x" } { / if }`)
+	equal(t, "", "{  #if   x   >   10   }{  x   }{   /if   }", `{ # if:"if " expr:"  x   >   10   " } { expr:"x   " } { / if }`)
+	equal(t, "", "{#if x}{x}{:else if y}{y}{/if}", `{ # if:"if " expr:"x" } { expr:"x" } { : else_if:"else if " expr:"y" } { expr:"y" } { / if }`)
+	equal(t, "", "{#if x}{x}{:else if (y)}{y}{/if}", `{ # if:"if " expr:"x" } { expr:"x" } { : else_if:"else if " expr:"(y)" } { expr:"y" } { / if }`)
+	equal(t, "", "{#if x}\n{x}\n{:else if y}\n{y}\n{/if}", `{ # if:"if " expr:"x" } text:"\n" { expr:"x" } text:"\n" { : else_if:"else if " expr:"y" } text:"\n" { expr:"y" } text:"\n" { / if }`)
+	equal(t, "", "{   #if x   }{x}{    :else    if y  }{y}{   /if  }", `{ # if:"if " expr:"x   " } { expr:"x" } { : else_if:"else    if " expr:"y  " } { expr:"y" } { / if }`)
+	equal(t, "", "{#if x == 10}{x}{:else if y > 10}{y}{/if}", `{ # if:"if " expr:"x == 10" } { expr:"x" } { : else_if:"else if " expr:"y > 10" } { expr:"y" } { / if }`)
+	equal(t, "", "{#if x == 10}{x}{:else if (y > 10)}{y}{/if}", `{ # if:"if " expr:"x == 10" } { expr:"x" } { : else_if:"else if " expr:"(y > 10)" } { expr:"y" } { / if }`)
+	equal(t, "", "{#if x == 10}{x}{:else if y > 10}{y}{:else}none{/if}", `{ # if:"if " expr:"x == 10" } { expr:"x" } { : else_if:"else if " expr:"y > 10" } { expr:"y" } { : else } text:"none" { / if }`)
+	equal(t, "", "{  #if     x   ==   10  }{  x  }{   :else    if    y > 10   }{  y   }{   :else   }none{   /if   }", `{ # if:"if " expr:"    x   ==   10  " } { expr:"x  " } { : else_if:"else    if " expr:"   y > 10   " } { expr:"y   " } { : else:"else   " } text:"none" { / if }`)
+	equal(t, "", "{#if x}{x}{:else}{y}{/if}", `{ # if:"if " expr:"x" } { expr:"x" } { : else } { expr:"y" } { / if }`)
+	equal(t, "", "{#if x}{x}{  :else  }{y}{/if}", `{ # if:"if " expr:"x" } { expr:"x" } { : else:"else  " } { expr:"y" } { / if }`)
+	equal(t, "", "<h1>{#if greeting}hi{:else if planet}mars{/if}</h1>", `< identifier:"h1" > { # if:"if " expr:"greeting" } text:"hi" { : else_if:"else if " expr:"planet" } text:"mars" { / if } </ identifier:"h1" >`)
 }
 
-func TestForLoop(t *testing.T) {
-	equal(t, "", "{for item in items}{item}{end}", `{ for:"for " expr:"item" in:"in " expr:"items" } { expr:"item" } { end }`)
-	equal(t, "", "{for item in items}\n{item}\n{end}", `{ for:"for " expr:"item" in:"in " expr:"items" } text:"\n" { expr:"item" } text:"\n" { end }`)
-	equal(t, "", "{for   item    in   items}  \n  {  item  }  \n  {  end  }", `{ for:"for " expr:"item" in:"in " expr:"  items" } text:"  \n  " { expr:"  item  " } text:"  \n  " { end:"  end  " }`)
-	equal(t, "", "{for i, item in items}{i}:{item}{end}", `{ for:"for " expr:"i" , expr:"item" in:"in " expr:"items" } { expr:"i" } text:":" { expr:"item" } { end }`)
-	equal(t, "", "{for i, item in items}\n{i}:{item}\n{end}", `{ for:"for " expr:"i" , expr:"item" in:"in " expr:"items" } text:"\n" { expr:"i" } text:":" { expr:"item" } text:"\n" { end }`)
-	equal(t, "", "{for   i  ,   item   in   items  }  \n  {  i  }:{  item  }\n{  end  }", `{ for:"for " expr:"i" , expr:"item" in:"in " expr:"  items  " } text:"  \n  " { expr:"  i  " } text:":" { expr:"  item  " } text:"\n" { end:"  end  " }`)
-	equal(t, "", "{for i, item in items}{i}:{item}{   else   }no items{end}", `{ for:"for " expr:"i" , expr:"item" in:"in " expr:"items" } { expr:"i" } text:":" { expr:"item" } { else:"   else   " } text:"no items" { end }`)
-	equal(t, "", "{for 3 in items}{3}{end}", `{ for:"for " error:"unexpected token '3'" text:" in items}" { expr:"3" } { end }`)
-	equal(t, "", "{for items}{item}{end}", `{ for:"for " expr:"items" } { expr:"item" } { end }`)
+func TestEachLoop(t *testing.T) {
+	equal(t, "", "{#each items as item}{item}{/each}", `{ # each:"each " expr:"items" as:"as " expr:"item" } { expr:"item" } { / each }`)
+	equal(t, "", "{#each cats as { id, name }, i}{id}:{name}{/each}", `{ # each:"each " expr:"cats" as:"as " expr:"{ id, name }" , expr:"i" } { expr:"id" } text:":" { expr:"name" } { / each }`)
+	equal(t, "", "{#each items as item}\n{item}\n{/each}", `{ # each:"each " expr:"items" as:"as " expr:"item" } text:"\n" { expr:"item" } text:"\n" { / each }`)
+	equal(t, "", "{#each   items    as   item}  \n  {  item  }  \n  { / each  }", `{ # each:"each " expr:"items" as:"as " expr:"  item" } text:"  \n  " { expr:"item  " } text:"  \n  " { / each }`)
+	equal(t, "", "{#each items as item, i}{i}:{item}{/each}", `{ # each:"each " expr:"items" as:"as " expr:"item" , expr:"i" } { expr:"i" } text:":" { expr:"item" } { / each }`)
+	equal(t, "", "{#each  items   as   i, item}\n{i}:{item}\n{/each}", `{ # each:"each " expr:"items" as:"as " expr:"  i" , expr:"item" } text:"\n" { expr:"i" } text:":" { expr:"item" } text:"\n" { / each }`)
+	equal(t, "", "{#each   items  as      item  ,  i   }  \n  {  i  }:{  item  }\n{ / each  }", `{ # each:"each " expr:"items" as:"as " expr:"     item  " , expr:"i" } text:"  \n  " { expr:"i  " } text:":" { expr:"item  " } text:"\n" { / each }`)
+	equal(t, "", "{#each items as 3}{3}{/each}", `{ # each:"each " expr:"items" as:"as " expr:"3" } { expr:"3" } { / each }`)
+	equal(t, "", "{#each items}{outer}{/each}", `{ # each:"each " expr:"items" } { expr:"outer" } { / each }`)
+	equal(t, "", "{#each   items  }{outer}{/each}", `{ # each:"each " expr:"items" } { expr:"outer" } { / each }`)
 }
 
 func TestCustomElement(t *testing.T) {
@@ -195,4 +198,10 @@ func TestTypeDefinition(t *testing.T) {
 	equal(t, "", `<script>import Sub from './04-sub.html';</script>`, `< script > text:"import Sub from './04-sub.html';" </ script >`)
 	equal(t, "", `<script>import type Sub from './04-sub.html';</script>`, `< script > text:"import type Sub from './04-sub.html';" </ script >`)
 	equal(t, "", `<script>import { Sub } from './04-sub.html';</script>`, `< script > text:"import { Sub } from './04-sub.html';" </ script >`)
+}
+
+func TestColonAttr(t *testing.T) {
+	equal(t, "", `<input type="text" bind:value={name} />`, `< identifier:"input" identifier:"type" = quote:"\"" text quote:"\"" identifier:"bind" : identifier:"value" = { expr:"name" } />`)
+	equal(t, "", `<input bind:value={todo.newItem} type="text" placeholder="new todo item.." />`, `< identifier:"input" identifier:"bind" : identifier:"value" = { expr:"todo.newItem" } identifier:"type" = quote:"\"" text quote:"\"" identifier:"placeholder" = quote:"\"" text:"new todo item.." quote:"\"" />`)
+	equal(t, "", `<span class:checked={item.status}>{item.text}</span>`, `< identifier:"span" identifier:"class" : identifier:"checked" = { expr:"item.status" } > { expr:"item.text" } </ identifier:"span" >`)
 }

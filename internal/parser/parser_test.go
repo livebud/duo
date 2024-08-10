@@ -114,6 +114,7 @@ func Test(t *testing.T) {
 	equal(t, "attribute", `<hr {id} />`, `<hr {id} />`)
 	equal(t, "attribute", `<hr {id} />`, `<hr {id} />`)
 	equal(t, "attribute", `<h1 name="">{greeting}</h1>`, `<h1 name="">{greeting}</h1>`)
+	equal(t, "attribute", `<button onclick={addToList} disabled={newItem === ""}>Add</button>`, `<button onclick="{addToList}" disabled="{newItem === ""}">Add</button>`)
 }
 
 func TestEventHandler(t *testing.T) {
@@ -152,38 +153,37 @@ func TestScope(t *testing.T) {
 }
 
 func TestIfStatement(t *testing.T) {
-	equal(t, "", "{if x}{x}{end}", `{if x}{x}{end}`)
-	equal(t, "", "{if x}{if y}{y}{end}{x}{end}", `{if x}{if y}{y}{end}{x}{end}`)
-	equal(t, "", "{if x}\n{x}\n{end}", `{if x}{x}{end}`)
-	equal(t, "", "{if x > 10}{x}{end}", `{if x > 10}{x}{end}`)
-	equal(t, "", "{if (x > 10)}{x}{end}", `{if (x > 10)}{x}{end}`)
-	equal(t, "", "{  if x > 10   }{  x    }{   end   }", `{if x > 10}{x}{end}`)
-	equal(t, "", "{if x}{x}{else if y}{y}{end}", `{if x}{x}{else}{if y}{y}{end}{end}`)
-	equal(t, "", "{if x}{x}{else if (y)}{y}{end}", `{if x}{x}{else}{if (y)}{y}{end}{end}`)
-	equal(t, "", "{if x}\n{x}\n{else if y}\n{y}\n{end}", `{if x}{x}{else}{if y}{y}{end}{end}`)
-	equal(t, "", "{   if x   }{x}{    else if y  }{y}{   end  }", `{if x}{x}{else}{if y}{y}{end}{end}`)
-	equal(t, "", "{if x == 10}{x}{else if y > 10}{y}{end}", `{if x == 10}{x}{else}{if y > 10}{y}{end}{end}`)
-	equal(t, "", "{if x == 10}{x}{else if (y > 10)}{y}{end}", `{if x == 10}{x}{else}{if (y > 10)}{y}{end}{end}`)
-	equal(t, "", "{if x == 10}{x}{else if y > 10}{y}{else}none{end}", `{if x == 10}{x}{else}{if y > 10}{y}{else}none{end}{end}`)
-	equal(t, "", "{  if     x   ==   10  }{  x  }{   else    if    y > 10   }{  y   }{   else   }none{   end   }", `{if x == 10}{x}{else}{if y > 10}{y}{else}none{end}{end}`)
-	equal(t, "", "{if x}{x}{else   }{y}{end}", `{if x}{x}{else}{y}{end}`)
-	equal(t, "", "{if x}{x}{else}{y}{end}", `{if x}{x}{else}{y}{end}`)
-	equal(t, "", "<h1>{if greeting}hi{else if planet}mars{end}</h1>", `<h1>{if greeting}hi{else}{if planet}mars{end}{end}</h1>`)
-	equal(t, "", "<h1>{if greeting}hi{else if planet}mars{else}world{end}</h1>", `<h1>{if greeting}hi{else}{if planet}mars{else}world{end}{end}</h1>`)
-	equal(t, "", "<h1>{if greeting}hi{else if planet}mars{else if name}world{end}</h1>", `<h1>{if greeting}hi{else}{if planet}mars{else}{if name}world{end}{end}{end}</h1>`)
-	equal(t, "", "<h1>{if greeting}hi{else if planet}mars{else if name}world{else}universe{end}</h1>", `<h1>{if greeting}hi{else}{if planet}mars{else}{if name}world{else}universe{end}{end}{end}</h1>`)
+	equal(t, "", "{#if x}{x}{/if}", `{#if x}{x}{/if}`)
+	equal(t, "", "{#if x}\n{x}\n{/if}", `{#if x}{x}{/if}`)
+	equal(t, "", "{#if x > 10}{x}{/if}", `{#if x > 10}{x}{/if}`)
+	equal(t, "", "{#if x > 10}{#if (y == 10)}{x}{/if}{/if}", `{#if x > 10}{#if (y == 10)}{x}{/if}{/if}`)
+	equal(t, "", "{#if (x > 10)}{x}{/if}", `{#if (x > 10)}{x}{/if}`)
+	equal(t, "", "{  #if   x   >   10   }{  x   }{   /if   }", `{#if x > 10}{x}{/if}`)
+	equal(t, "", "{#if x}{x}{:else if y}{y}{/if}", `{#if x}{x}{:else}{#if y}{y}{/if}{/if}`)
+	equal(t, "", "{#if x}{x}{:else if (y)}{y}{/if}", `{#if x}{x}{:else}{#if (y)}{y}{/if}{/if}`)
+	equal(t, "", "{#if x}\n{x}\n{:else if y}\n{y}\n{/if}", `{#if x}{x}{:else}{#if y}{y}{/if}{/if}`)
+	equal(t, "", "{   #if x   }{x}{    :else    if y  }{y}{   /if  }", `{#if x}{x}{:else}{#if y}{y}{/if}{/if}`)
+	equal(t, "", "{#if x == 10}{x}{:else if y > 10}{y}{/if}", `{#if x == 10}{x}{:else}{#if y > 10}{y}{/if}{/if}`)
+	equal(t, "", "{#if x == 10}{x}{:else if (y > 10)}{y}{/if}", `{#if x == 10}{x}{:else}{#if (y > 10)}{y}{/if}{/if}`)
+	equal(t, "", "{#if x == 10}{x}{:else if y > 10}{y}{:else}none{/if}", `{#if x == 10}{x}{:else}{#if y > 10}{y}{:else}none{/if}{/if}`)
+	equal(t, "", "{  #if     x   ==   10  }{  x  }{   :else    if    y > 10   }{  y   }{   :else   }none{   /if   }", `{#if x == 10}{x}{:else}{#if y > 10}{y}{:else}none{/if}{/if}`)
+	equal(t, "", "{#if x}{x}{:else}{y}{/if}", `{#if x}{x}{:else}{y}{/if}`)
+	equal(t, "", "{#if x}{x}{  :else  }{y}{/if}", `{#if x}{x}{:else}{y}{/if}`)
+	equal(t, "", "<h1>{#if greeting}hi{:else if planet}mars{/if}</h1>", `<h1>{#if greeting}hi{:else}{#if planet}mars{/if}{/if}</h1>`)
 }
 
-func TestForLoop(t *testing.T) {
-	equal(t, "", "{for item in items}{item}{end}", `{for item in items}{item}{end}`)
-	equal(t, "", "{for item in items}\n{item}\n{end}", `{for item in items}{item}{end}`)
-	equal(t, "", "{for   item    in   items}  \n  {  item  }  \n  {  end  }", `{for item in items}{item}{end}`)
-	equal(t, "", "{for i, item in items}{i}:{item}{end}", `{for i, item in items}{i}:{item}{end}`)
-	equal(t, "", "{for i, item in items}\n{i}:{item}\n{end}", `{for i, item in items}{i}:{item}{end}`)
-	equal(t, "", "{for   i  ,   item   in   items  }  \n  {  i  }:{  item  }\n{  end  }", `{for i, item in items}{i}:{item}{end}`)
-	equal(t, "", "{for 3 in items}{3}{end}", `unexpected token '3'`)
-	equal(t, "", "{for items}{item}{end}", `{for items}{item}{end}`)
-	equal(t, "", "{for   items  }{item}{end}", `{for items}{item}{end}`)
+func TestEachLoop(t *testing.T) {
+	equal(t, "", "{#each items as item}{item}{/each}", `{#each items as item}{item}{/each}`)
+	equal(t, "", "{#each items as item}\n{item}\n{/each}", `{#each items as item}{item}{/each}`)
+	equal(t, "", "{#each   items    as   item}  \n  {  item  }  \n  { / each  }", `{#each items as item}{item}{/each}`)
+	equal(t, "", "{#each items as item, i}{i}:{item}{/each}", `{#each items as item, i}{i}:{item}{/each}`)
+	equal(t, "", "{#each  items   as   i, item}\n{i}:{item}\n{/each}", `{#each items as i, item}{i}:{item}{/each}`)
+	equal(t, "", "{#each   items  as      item  ,  i   }  \n  {  i  }:{  item  }\n{ / each  }", `{#each items as item, i}{i}:{item}{/each}`)
+	equal(t, "", "{#each items as 3}{3}{/each}", `parser: {#each items as 3}{3}{/each}: expected an identifier, got *js.LiteralExpr`)
+	equal(t, "", "{#each items}{outer}{/each}", `{#each items}{outer}{/each}`)
+	equal(t, "", "{#each   items  }{outer}{/each}", `{#each items}{outer}{/each}`)
+	// TODO: handle parsing destructured objects
+	// equal(t, "", "{#each cats as { id, name }, i}{id}:{name}{/each}", ``)
 }
 
 func TestComponent(t *testing.T) {
@@ -217,4 +217,17 @@ func TestScript(t *testing.T) {
 
 func TestComment(t *testing.T) {
 	equal(t, "", "<!-- this is a comment -->\n<h2>hello world</h2>", "<!-- this is a comment --><h2>hello world</h2>")
+}
+
+func TestBind(t *testing.T) {
+	equal(t, "", `<input type="text" bind:value={name} />`, `<input type="text" bind:value={name} />`)
+	equal(t, "", `<input bind:value={todo.newItem} type="text" placeholder="new todo item.." />`, `<input bind:value={todo.newItem} type="text" placeholder="new todo item.." />`)
+}
+
+func TestClass(t *testing.T) {
+	equal(t, "", `<span class:checked={item.status}>{item.text}</span>`, `<span class:checked={item.status}>{item.text}</span>`)
+}
+
+func TestStyle(t *testing.T) {
+	equal(t, "", `<span>{item.text}</span><style>span { background-color: blue; }</style>`, `<span>{item.text}</span><style>span { background-color: blue }</style>`)
 }

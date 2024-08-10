@@ -166,20 +166,6 @@ func (l *Lexer) text() string {
 	return l.input[l.start:l.end]
 }
 
-func (l *Lexer) stepUntil(rs ...rune) bool {
-	for {
-		if l.cp == eof {
-			return false
-		}
-		for _, r := range rs {
-			if l.cp == r {
-				return true
-			}
-		}
-		l.step()
-	}
-}
-
 func (l *Lexer) peak(n int) string {
 	s := new(strings.Builder)
 	if n == 0 {
@@ -208,7 +194,7 @@ func (l *Lexer) popState() {
 }
 
 func (l *Lexer) errorf(msg string, args ...interface{}) token.Type {
-	l.err = fmt.Sprintf(msg, args...)
+	l.err = fmt.Sprintf("lexer: "+msg, args...)
 	return token.Error
 }
 
@@ -252,8 +238,17 @@ func textState(l *Lexer) (t token.Type) {
 		return token.LessThan
 	case '{':
 		l.step()
-		l.pushState(blockExpressionState)
+		l.pushState(openBlockState)
 		return token.LeftBrace
+		// switch l.cp {
+		// case '#':
+		// 	l.pushState(openBlockState)
+		// case '/':
+		// 	l.pushState(closeBlockState)
+		// default:
+		// 	l.pushState(expressionState)
+		// }
+		// return token.LeftBrace
 	default:
 		l.step()
 		for l.cp != '<' && l.cp != '{' && l.cp != eof {
@@ -269,7 +264,7 @@ func startOpenTagState(l *Lexer) token.Type {
 		case l.cp == eof:
 			l.popState()
 			return l.unexpected()
-		case isLower(l.cp):
+		case isLowerAlpha(l.cp):
 			l.step()
 			tokenType := token.Identifier
 		tagName:
@@ -337,6 +332,9 @@ func middleTagState(l *Lexer) (t token.Type) {
 			default:
 				return token.Identifier
 			}
+		case l.cp == ':':
+			l.step()
+			return token.Colon
 		case l.cp == '>':
 			l.step()
 			l.popState()
@@ -365,7 +363,7 @@ func middleTagState(l *Lexer) (t token.Type) {
 			return token.Equal
 		case l.cp == '{':
 			l.step()
-			l.pushState(expressionState)
+			l.pushState(exprState)
 			return token.LeftBrace
 		case isSpace(l.cp):
 			l.step()
@@ -390,7 +388,7 @@ func startCloseTagState(l *Lexer) token.Type {
 		case l.cp == '/':
 			l.step()
 			return token.Slash
-		case isLower(l.cp):
+		case isLowerAlpha(l.cp):
 			l.step()
 			tokenType := token.Identifier
 		tagName:
@@ -456,7 +454,7 @@ func attributeState(l *Lexer) (t token.Type) {
 	case l.cp == '{':
 		l.step()
 		l.popState()
-		l.pushState(expressionState)
+		l.pushState(exprState)
 		return token.LeftBrace
 	case isSpace(l.cp):
 		return l.unexpected()
@@ -484,7 +482,7 @@ func attributeValueState(until rune, midToken, endToken token.Type) state {
 			return endToken
 		case '{':
 			l.step()
-			l.pushState(expressionState)
+			l.pushState(exprState)
 			return token.LeftBrace
 		default:
 			for l.cp != until && l.cp != '{' && l.cp != eof {
@@ -529,61 +527,136 @@ func styleState(l *Lexer) token.Type {
 	}
 }
 
-func blockExpressionState(l *Lexer) token.Type {
+func openBlockState(l *Lexer) token.Type {
 	for {
-		switch l.cp {
-		case eof:
+		switch {
+		case l.cp == eof:
 			l.popState()
 			return l.unexpected()
-		case ' ':
+		case isSpace(l.cp):
 			l.step()
-			for l.cp == ' ' {
+			for isSpace(l.cp) {
 				l.step()
 			}
+			l.ignore()
 			continue
-			// return token.Space
-		case 'i':
+		case l.cp == '#':
+			l.step()
 			l.popState()
-			l.pushState(expressionState)
-			if l.accept('i', 'f', ' ') {
-				return token.If
-			}
-			return expressionState(l)
-		case 'e':
+			l.pushState(hashBlockState)
+			return token.Hash
+		case l.cp == ':':
+			l.step()
 			l.popState()
-			l.pushState(expressionState)
-			if l.accept('e', 'n', 'd') {
-				for l.cp == ' ' {
-					l.step()
-				}
-				return token.End
-			} else if l.accept('e', 'l', 's', 'e') {
-				for l.cp == ' ' {
-					l.step()
-				}
-				if l.accept('i', 'f', ' ') {
-					return token.ElseIf
-				}
-				return token.Else
-			}
-			return expressionState(l)
-		case 'f':
+			l.pushState(colonBlockState)
+			return token.Colon
+		case l.cp == '/':
+			l.step()
 			l.popState()
-			if l.accept('f', 'o', 'r', ' ') {
-				l.pushState(forState)
-				return token.For
-			}
-			l.pushState(expressionState)
-			return expressionState(l)
+			l.pushState(slashBlockState)
+			return token.Slash
 		default:
 			l.popState()
-			l.pushState(expressionState)
-			return expressionState(l)
+			l.pushState(exprState)
+			return exprState(l)
 		}
 	}
 }
 
-func expressionState(l *Lexer) token.Type {
+func hashBlockState(l *Lexer) token.Type {
+	for {
+		switch {
+		case l.cp == eof:
+			l.popState()
+			return l.unexpected()
+		case l.accept('e', 'a', 'c', 'h') && isSpace(l.cp):
+			l.step()
+			l.popState()
+			l.pushState(eachState)
+			return token.Each
+		case l.accept('i', 'f') && isSpace(l.cp):
+			l.step()
+			l.popState()
+			l.pushState(exprState)
+			return token.If
+		case isSpace(l.cp):
+			l.step()
+			for isSpace(l.cp) {
+				l.step()
+			}
+			l.ignore()
+			continue
+		default:
+			l.popState()
+			return l.unexpected()
+		}
+	}
+}
+
+func colonBlockState(l *Lexer) token.Type {
+	for {
+		switch {
+		case l.cp == eof:
+			l.popState()
+			return l.unexpected()
+		case l.accept('e', 'l', 's', 'e'):
+			for isSpace(l.cp) {
+				l.step()
+			}
+			if l.accept('i', 'f') && isSpace(l.cp) {
+				l.step()
+				l.popState()
+				l.pushState(exprState)
+				return token.ElseIf
+			}
+			return token.Else
+		case isSpace(l.cp):
+			l.step()
+			for isSpace(l.cp) {
+				l.step()
+			}
+			l.ignore()
+			continue
+		case l.cp == '}':
+			l.step()
+			l.popState()
+			return token.RightBrace
+		default:
+			l.popState()
+			return l.unexpected()
+		}
+	}
+}
+
+func slashBlockState(l *Lexer) token.Type {
+	for {
+		switch {
+		case l.cp == eof:
+			l.popState()
+			return l.unexpected()
+		case l.accept('e', 'a', 'c', 'h'):
+			return token.Each
+		case l.accept('i', 'f'):
+			return token.If
+		case isSpace(l.cp):
+			l.step()
+			for isSpace(l.cp) {
+				l.step()
+			}
+			l.ignore()
+			continue
+		case l.cp == '}':
+			l.step()
+			l.popState()
+			return token.RightBrace
+		default:
+			l.popState()
+			return l.unexpected()
+		}
+	}
+}
+
+func exprState(l *Lexer) token.Type {
 	for {
 		switch l.cp {
 		case eof:
@@ -597,7 +670,6 @@ func expressionState(l *Lexer) token.Type {
 			for l.cp == ' ' {
 				l.step()
 			}
-			// return token.Space
 		default:
 			// Handle inner right brace } characters
 			depth := 1
@@ -658,7 +730,7 @@ func doctypeState(l *Lexer) token.Type {
 	}
 }
 
-func forState(l *Lexer) token.Type {
+func eachState(l *Lexer) token.Type {
 	for {
 		switch {
 		case l.cp == eof:
@@ -671,20 +743,15 @@ func forState(l *Lexer) token.Type {
 			}
 			l.ignore()
 			continue
-		case l.cp == 'i':
-			if l.accept('i', 'n', ' ') {
-				l.popState()
-				l.pushState(expressionState)
-				return token.In
-			}
+		case l.accept('a', 's') && isSpace(l.cp):
 			l.step()
-			if l.stepUntil(' ', ',', '}') {
-				return token.Expr
-			}
+			l.pushState(eachAsState)
+			return token.As
 		case isIdentifierHead(l.cp):
-			if l.stepUntil(' ', ',', '}') {
-				return token.Expr
+			for isAlphaNumeric(l.cp) {
+				l.step()
 			}
+			return token.Expr
 		case l.cp == ',':
 			l.step()
 			return token.Comma
@@ -699,6 +766,35 @@ func forState(l *Lexer) token.Type {
 	}
 }
 
+func eachAsState(l *Lexer) token.Type {
+	depth := 0
+	for {
+		switch {
+		case l.cp == eof:
+			l.popState()
+			return l.unexpected()
+		case l.cp == '{':
+			l.step()
+			depth++
+		case l.cp == '}':
+			if depth == 0 {
+				l.popState()
+				return token.Expr
+			}
+			l.step()
+			depth--
+		case l.cp == ',':
+			if depth == 0 {
+				l.popState()
+				return token.Expr
+			}
+			l.step()
+		default:
+			l.step()
+		}
+	}
+}
+
 func isIdentifierHead(cp rune) bool {
 	return isAlpha(cp) || cp == '_' || cp == '$'
 }
@@ -707,12 +803,12 @@ func isAlpha(cp rune) bool {
 	return (cp >= 'a' && cp <= 'z') || (cp >= 'A' && cp <= 'Z')
 }
 
-func isLower(cp rune) bool {
+func isLowerAlpha(cp rune) bool {
 	return cp >= 'a' && cp <= 'z'
 }
 
 func isLowerNumeric(cp rune) bool {
-	return isLower(cp) || (cp >= '0' && cp <= '9')
+	return isLowerAlpha(cp) || (cp >= '0' && cp <= '9')
 }
 
 func isUpper(cp rune) bool {
