@@ -1,4 +1,4 @@
-# .duo
+# Svelte Compiler for Go
 
 Reactive templating language for Go. Still early days.
 
