@@ -77,15 +77,14 @@ func TestSimple(t *testing.T) {
 	equal(t, "planet", `<h1>hello {planet}!</h1>`, Map{}, `<h1>hello !</h1>`)
 	equal(t, "greeting_planet", `<h1>{greeting} {planet}!</h1>`, Map{"greeting": "hola", "planet": "Earth"}, `<h1>hola Earth!</h1>`)
 	equal(t, "attributes", `<hr target={target} />`, Map{"target": "_blank"}, `<hr target="_blank"/>`)
-	equal(t, "attributes", `<hr target={target} />`, Map{}, `<hr/>`)
+	equal(t, "attributes", `<hr target={target} />`, Map{}, `<hr target=""/>`)
 	equal(t, "attributes", `<hr name="{target}-{name}" />`, Map{"target": "_blank", "name": "anki"}, `<hr name="_blank-anki"/>`)
 	equal(t, "attributes", `<hr name="{target}-{name}" />`, Map{"target": "_blank"}, `<hr name="_blank-"/>`)
 	equal(t, "attributes", `<hr name="{target}-{name}" />`, Map{"name": "anki"}, `<hr name="-anki"/>`)
 	equal(t, "attributes", `<hr target="{target}-{name}" />`, Map{}, `<hr target="-"/>`)
 	equal(t, "attributes", `<hr {name} />`, Map{"name": "hello"}, `<hr name="hello"/>`)
 	equal(t, "attributes", `<hr {name} />`, Map{}, `<hr/>`)
-	// TODO: Should this be `<h1 name></h1>`?
-	equal(t, "attributes", `<h1 name=""></h1>`, Map{}, `<h1></h1>`)
+	equal(t, "attributes", `<h1 name=""></h1>`, Map{}, `<h1 name=""></h1>`)
 	equal(t, "number", `<h1>count: {count}!</h1>`, Map{"count": 10}, `<h1>count: 10!</h1>`)
 	equal(t, "number", `<h1>count: {count}!</h1>`, Map{"count": "10"}, `<h1>count: 10!</h1>`)
 }
@@ -112,14 +111,15 @@ func TestExpr(t *testing.T) {
 	equal(t, "", `<button>{count} {count === 1 ? 'time' : 'times'}</button>`, Map{"count": 1}, `<button>1 time</button>`)
 	equal(t, "", `<button>{count} {count === 1 ? 'time' : 'times'}</button>`, Map{"count": 2}, `<button>2 times</button>`)
 	equal(t, "", `<button>{count} {count === 1 ? 'time' : 'times'}</button>`, Map{"count": 99}, `<button>99 times</button>`)
+	equal(t, "", `<input disabled={newItem === ""}/>`, Map{"newItem": ""}, `<input disabled/>`)
 }
 
 func TestFile(t *testing.T) {
 	equalFile(t, "01-greeting.html", Map{}, "\n\n<h1></h1>")
 	equalFile(t, "01-greeting.html", Map{"greeting": "hi"}, "\n\n<h1>hi</h1>")
-	equalFile(t, "02-attribute.html", Map{}, "<div>\n  <hr/>\n  <hr/>\n  <hr/>\n  <hr name=\"-\"/>\n  <hr/>\n</div>")
-	equalFile(t, "02-attribute.html", Map{"name": "anki"}, "<div>\n  <hr name=\"anki\"/>\n  <hr name=\"anki\"/>\n  <hr name=\"anki\"/>\n  <hr name=\"-anki\"/>\n  <hr/>\n</div>")
-	equalFile(t, "02-attribute.html", Map{"target": "window", "name": "anki"}, "<div>\n  <hr name=\"anki\"/>\n  <hr name=\"anki\"/>\n  <hr name=\"anki\"/>\n  <hr name=\"window-anki\"/>\n  <hr/>\n</div>")
+	equalFile(t, "02-attribute.html", Map{}, "<div>\n  <hr/>\n  <hr name=\"\"/>\n  <hr name=\"\"/>\n  <hr name=\"-\"/>\n  <hr name=\"\"/>\n</div>")
+	equalFile(t, "02-attribute.html", Map{"name": "anki"}, "<div>\n  <hr name=\"anki\"/>\n  <hr name=\"anki\"/>\n  <hr name=\"anki\"/>\n  <hr name=\"-anki\"/>\n  <hr name=\"\"/>\n</div>")
+	equalFile(t, "02-attribute.html", Map{"target": "window", "name": "anki"}, "<div>\n  <hr name=\"anki\"/>\n  <hr name=\"anki\"/>\n  <hr name=\"anki\"/>\n  <hr name=\"window-anki\"/>\n  <hr name=\"\"/>\n</div>")
 	equalFile(t, "03-counter.html", Map{}, "\n\n<button>\n  Clicked 0 times\n</button>")
 	equalFile(t, "03-counter.html", Map{"count": 1}, "\n\n<button>\n  Clicked 1 time\n</button>")
 	equalFile(t, "03-counter.html", Map{"count": 10}, "\n\n<button>\n  Clicked 10 times\n</button>")

@@ -122,6 +122,10 @@ type writer interface {
 	WriteByte(b byte) error
 }
 
+func (e *evaluator) errorf(format string, args ...interface{}) error {
+	return fmt.Errorf("ssr: "+format, args...)
+}
+
 func (e *evaluator) evaluateDocument(w writer, sc *scope, node *ast.Document) error {
 	return e.evaluateFragments(w, sc, node.Children...)
 }
@@ -211,26 +215,36 @@ func (e *evaluator) evaluateAttribute(w writer, sc *scope, node ast.Attribute) e
 }
 
 func (e *evaluator) evaluateField(w writer, sc *scope, node *ast.Field) error {
-	buf := new(bytes.Buffer)
 	// Skip event handlers
 	if node.EventHandler {
 		return nil
 	}
-	for _, value := range node.Values {
-		if err := e.evaluateValue(buf, sc, value); err != nil {
-			return err
-		}
-	}
-	if buf.Len() == 0 {
+	if len(node.Values) == 0 {
+		w.WriteString(node.Key)
 		return nil
 	}
-	w.WriteString(node.Key)
-	if len(node.Values) > 0 {
-		w.WriteByte('=')
-		w.WriteByte('"')
-		w.Write(buf.Bytes())
-		w.WriteByte('"')
+	value, err := e.evaluateValues(sc, node.Values...)
+	if err != nil {
+		return err
 	}
+	switch value.Kind() {
+	case reflect.Bool:
+		if value.Bool() {
+			w.WriteString(node.Key)
+			return nil
+		} else {
+			return nil
+		}
+	}
+	valueString, err := valueToString(value)
+	if err != nil {
+		return e.errorf("unable to evaluating field value: %w", err)
+	}
+	w.WriteString(node.Key)
+	w.WriteByte('=')
+	w.WriteByte('"')
+	w.WriteString(valueString)
+	w.WriteByte('"')
 	return nil
 }
 
@@ -268,6 +282,19 @@ func (e *evaluator) evaluateAttributeShorthand(w writer, sc *scope, node *ast.At
 	}
 	w.WriteByte('"')
 	return nil
+}
+
+func (e *evaluator) evaluateValues(sc *scope, values ...ast.Value) (reflect.Value, error) {
+	if len(values) == 1 {
+		return evaluateValue(sc, values[0])
+	}
+	buf := new(bytes.Buffer)
+	for _, value := range values {
+		if err := e.evaluateValue(buf, sc, value); err != nil {
+			return reflect.Value{}, err
+		}
+	}
+	return reflect.ValueOf(buf.String()), nil
 }
 
 func (e *evaluator) evaluateValue(w writer, sc *scope, node ast.Value) error {
@@ -311,6 +338,23 @@ func writeValue(w writer, value reflect.Value) error {
 		return nil
 	default:
 		return fmt.Errorf("unexpected value %T", value)
+	}
+}
+
+func valueToString(value reflect.Value) (string, error) {
+	if !value.IsValid() {
+		return "", nil
+	}
+	v := value.Interface()
+	switch value := v.(type) {
+	case string:
+		return value, nil
+	case int64:
+		return strconv.FormatInt(value, 10), nil
+	case int:
+		return strconv.Itoa(value), nil
+	default:
+		return "", fmt.Errorf("unexpected value %T", value)
 	}
 }
 

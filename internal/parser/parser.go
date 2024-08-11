@@ -310,6 +310,8 @@ func (p *Parser) parseAttributeStringValues() (values []ast.Value, err error) {
 	for {
 		switch {
 		case p.Accept(token.Quote):
+			// Empty text node
+			values = append(values, &ast.Text{Value: ""})
 			return values, nil
 		case p.Accept(token.Text):
 			text, err := p.parseText()

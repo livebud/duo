@@ -114,6 +114,7 @@ func Test(t *testing.T) {
 	equal(t, "attribute", `<hr {id} />`, `<hr {id} />`)
 	equal(t, "attribute", `<hr {id} />`, `<hr {id} />`)
 	equal(t, "attribute", `<h1 name="">{greeting}</h1>`, `<h1 name="">{greeting}</h1>`)
+	equal(t, "attributes", `<h1 name=""></h1>`, `<h1 name=""></h1>`)
 	equal(t, "attribute", `<button onclick={addToList} disabled={newItem === ""}>Add</button>`, `<button onclick="{addToList}" disabled="{newItem === ""}">Add</button>`)
 }
 
