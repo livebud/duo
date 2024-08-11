@@ -152,9 +152,9 @@ func Print(ast js.INode) string {
 	return strings.TrimSpace(ast.JS())
 }
 
-func PrettyPrint(script string) (string, error) {
+func Format(node js.INode) (string, error) {
 	log := logger.NewDeferLog(logger.DeferLogNoVerboseOrDebug, nil)
-	tree, ok := js_parser.Parse(log, test.SourceForTest(script), js_parser.OptionsFromConfig(&config.Options{}))
+	tree, ok := js_parser.Parse(log, test.SourceForTest(node.JS()), js_parser.OptionsFromConfig(&config.Options{}))
 	msgs := log.Done()
 	text := ""
 	for _, msg := range msgs {

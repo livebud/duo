@@ -30,7 +30,11 @@ func (e *Renderer) Render(w io.Writer, path string, v interface{}) error {
 	if err != nil {
 		return err
 	}
-	doc, err := parser.Parse(file.Path, string(file.Code))
+	return e.Evaluate(w, file.Path, file.Code, v)
+}
+
+func (e *Renderer) Evaluate(w io.Writer, path string, code []byte, v interface{}) error {
+	doc, err := parser.Parse(path, string(code))
 	if err != nil {
 		return err
 	}
@@ -40,7 +44,7 @@ func (e *Renderer) Render(w io.Writer, path string, v interface{}) error {
 		return err
 	}
 	evaluator := &evaluator{
-		path:     file.Path,
+		path:     path,
 		scope:    doc.Scope,
 		resolver: e.Resolver,
 	}

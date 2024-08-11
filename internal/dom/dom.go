@@ -6,15 +6,32 @@ import (
 
 	"github.com/livebud/duo/internal/ast"
 	"github.com/livebud/duo/internal/js"
+	"github.com/livebud/duo/internal/parser"
 	"github.com/livebud/duo/internal/scope"
 )
 
-func Generate(doc *ast.Document) (string, error) {
+func Generate(path string, code []byte) (string, error) {
+	generator := &Generator{}
+	return generator.Generate(path, code)
+}
+
+type Generator struct {
+}
+
+func (g *Generator) Generate(path string, code []byte) (string, error) {
+	doc, err := parser.Parse(path, string(code))
+	if err != nil {
+		return "", err
+	}
+	return Print(doc)
+}
+
+func Print(doc *ast.Document) (string, error) {
 	program, err := Transform(doc)
 	if err != nil {
 		return "", err
 	}
-	code, err := js.PrettyPrint(program.JS())
+	code, err := js.Format(program)
 	if err != nil {
 		return "", err
 	}

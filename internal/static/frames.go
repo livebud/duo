@@ -1,0 +1,16 @@
+package static
+
+import (
+	"io/fs"
+
+	"github.com/livebud/duo/internal/resolver"
+)
+
+type frameResolver struct {
+	fsys fs.FS
+}
+
+func (r *frameResolver) Resolve(res *resolver.Resolve) (*resolver.File, error) {
+	// TODO: finish me
+	return nil, fs.ErrNotExist
+}

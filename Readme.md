@@ -1,13 +1,12 @@
 # .duo
 
-Template language for Bud. Still early days.
+Reactive templating language for Go. Still early days.
 
 ## Design Goals
 
-1. Reactive frontend like Svelte
+1. Svelte 5 support in Go
 2. Supports SSR without needing to evaluate server-side JS
-3. Deep reactivity using ES6 proxies (e.g. `arr.push` should trigger a re-render)
-4. Client-side uses Web Components
+3. Client-side uses Svelte's runtime
 
 ## License
 

@@ -3,9 +3,7 @@ package resolver
 import (
 	"fmt"
 	"io/fs"
-	"os"
 	"path"
-	"path/filepath"
 )
 
 type Resolve struct {
@@ -22,23 +20,23 @@ type Interface interface {
 	Resolve(r *Resolve) (*File, error)
 }
 
-func New(dir string) *Resolver {
-	return &Resolver{dir}
+func New(fsys fs.FS) *Resolver {
+	return &Resolver{fsys}
 }
 
 type Resolver struct {
-	dir string
+	fsys fs.FS
 }
 
 var _ Interface = (*Resolver)(nil)
 
 func (r *Resolver) Resolve(res *Resolve) (*File, error) {
-	dir := r.dir
+	dir := "."
 	if res.From != "" {
-		dir = filepath.Dir(res.From)
+		dir = path.Dir(res.From)
 	}
-	relPath := filepath.Join(dir, res.Path)
-	code, err := os.ReadFile(relPath)
+	relPath := path.Join(dir, res.Path)
+	code, err := fs.ReadFile(r.fsys, relPath)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", relPath, err)
 	}

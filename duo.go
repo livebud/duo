@@ -3,19 +3,15 @@ package duo
 import (
 	"io"
 	"net/http"
+	"os"
 
 	"github.com/livebud/duo/internal/dom"
-	"github.com/livebud/duo/internal/parser"
 	"github.com/livebud/duo/internal/resolver"
 	"github.com/livebud/duo/internal/ssr"
 )
 
 func Generate(path string, code []byte) (string, error) {
-	doc, err := parser.Parse(path, string(code))
-	if err != nil {
-		return "", err
-	}
-	return dom.Generate(doc)
+	return dom.Generate(path, code)
 }
 
 type Input struct {
@@ -30,9 +26,12 @@ type Input struct {
 }
 
 func New(in Input) *Template {
+	if in.Dir == "" {
+		in.Dir = "."
+	}
 	return &Template{
 		evaluator: &ssr.Renderer{
-			Resolver: resolver.New(in.Dir),
+			Resolver: resolver.New(os.DirFS(in.Dir)),
 		},
 	}
 }

@@ -21,7 +21,7 @@ func equal(t *testing.T, path, input, expected string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		actual, err := dom.Generate(doc)
+		actual, err := dom.Print(doc)
 		if err != nil {
 			actual = err.Error()
 		}
