@@ -29,7 +29,6 @@ func Dir(dir string) http.Handler {
 		Fsys:     fsys,
 		Resolver: resolver,
 		SSR:      ssr.New(resolver),
-		Live:     true,
 		Cache:    false,
 		Minify:   false,
 		Layouts:  &layoutResolver{fsys},
@@ -46,7 +45,6 @@ type Server struct {
 	Fsys       fs.FS
 	Resolver   resolver.Interface
 	SSR        *ssr.Renderer
-	Live       bool
 	Cache      bool
 	Minify     bool
 	Layouts    resolver.Interface
@@ -164,6 +162,7 @@ func (s *Server) Render(w http.ResponseWriter, page *Page, props map[string]inte
 	if err := s.SSR.Evaluate(children, page.Layout.Path, page.Layout.Code, props); err != nil {
 		return err
 	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if _, err := children.WriteTo(w); err != nil {
 		return err
 	}
@@ -177,6 +176,25 @@ const entryCode = `
 		target: document.getElementById("svelte"),
 		props: JSON.parse(document.getElementById("svelte.props").textContent),
 	});
+`
+
+var clientCode = `
+import { render as preactRender, h, hydrate } from 'https://esm.run/preact'
+import Proxy from 'https://esm.run/internal/proxy'
+import Component from "./%[1]s";
+
+export function render(Component, target, props = {}) {
+		const proxy = Proxy(props)
+		const component = Component(h, proxy)
+		hydrate(h(component, proxy, []), target)
+		window.requestAnimationFrame(() => {
+				props.subscribe(() => {
+						preactRender(h(component, props, []), target)
+				})
+		})
+}
+
+render(Component, document.querySelector('main'))
 `
 
 func (s *Server) serveJS(w http.ResponseWriter, urlPath string) {
@@ -195,7 +213,8 @@ func (s *Server) serveJS(w http.ResponseWriter, urlPath string) {
 			esbuild.Svelte(s.Fsys),
 			esbuild.Virtual(urlPath, func(args api.OnLoadArgs) (api.OnLoadResult, error) {
 				componentPath := strings.TrimSuffix(urlPath, ".js")
-				contents := fmt.Sprintf(entryCode, componentPath)
+				contents := fmt.Sprintf(clientCode, componentPath)
+				fmt.Println(string(contents))
 				return api.OnLoadResult{
 					Contents:   &contents,
 					ResolveDir: s.Dir,

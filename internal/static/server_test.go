@@ -62,12 +62,19 @@ func TestHelloWorld(t *testing.T) {
 	`)
 
 	req = httptest.NewRequest("GET", "/index.svelte.js", nil)
+	// contains(t, handler, req,
+	// 	`HTTP/1.1 200 OK`,
+	// 	`Content-Type: application/javascript`,
+	// 	`// http-url:https://esm.run/svelte@next`,
+	// 	`return h2("h1", {}, ["hello, world!"]);`,
+	// 	`target: document.getElementById("svelte"),`,
+	// 	`props: JSON.parse(document.getElementById("svelte.props").textContent)`,
+	// )
 	contains(t, handler, req,
 		`HTTP/1.1 200 OK`,
 		`Content-Type: application/javascript`,
-		`// http-url:https://esm.run/svelte@next`,
-		`return h2("h1", {}, ["hello, world!"]);`,
-		`target: document.getElementById("svelte"),`,
-		`props: JSON.parse(document.getElementById("svelte.props").textContent)`,
+		`// http-url:https://esm.run/preact`,
+		`("h1", {}, ["hello, world!"]);`,
+		`document.querySelector("main")`,
 	)
 }

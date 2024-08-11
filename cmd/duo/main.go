@@ -1,28 +1,21 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"io"
-	"io/fs"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
-	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/livebud/cli"
-	"github.com/livebud/duo"
 	"github.com/livebud/duo/internal/cli/graceful"
 	"github.com/livebud/duo/internal/cli/hot"
 	"github.com/livebud/duo/internal/cli/pubsub"
+	"github.com/livebud/duo/internal/static"
 	"github.com/livebud/watcher"
-	"github.com/matthewmueller/virt"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -89,8 +82,7 @@ func (s *Serve) Run(ctx context.Context) error {
 
 func (s *Serve) serve(ctx context.Context, ln net.Listener, ps pubsub.Subscriber) func() error {
 	return func() error {
-		fs := &fileServer{s.Dir}
-		return graceful.Serve(ctx, ln, s.handler(hot.New(ps), fs))
+		return graceful.Serve(ctx, ln, s.handler(hot.New(ps), static.Dir(s.Dir)))
 	}
 }
 
@@ -106,6 +98,14 @@ var favicon = []byte{
 	0x08, 0xd7, 0x63, 0xf8,
 }
 
+// Minimal live reload script
+const liveReloadScript = `
+<script>
+var es = new EventSource('/.live');
+es.onmessage = function(e) { window.location.reload(); }
+</script>
+`
+
 func (s *Serve) handler(live http.Handler, fs http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -117,349 +117,11 @@ func (s *Serve) handler(live http.Handler, fs http.Handler) http.Handler {
 		default:
 			w.Header().Set("Cache-Control", "no-store")
 			fs.ServeHTTP(w, r)
+			if s.Live && isHTML(w.Header().Get("Content-Type")) {
+				w.Write([]byte(liveReloadScript))
+			}
 		}
 	})
-}
-
-const liveReloadScript = `
-<script>
-var es = new EventSource('/.live');
-es.onmessage = function(e) { window.location.reload(); }
-</script>
-`
-
-const htmlPage = `<!doctype html>
-<html>
-<head>
-	<meta charset="utf-8">
-</head>
-<body>
-	<main>
-		%s
-	</main>
-</body>
-</html>
-`
-
-func isView(path string) bool {
-	ext := filepath.Ext(path)
-	return ext == "" || ext == ".html" || ext == ".svelte" || ext == ".duo"
-}
-
-func openFile(paths ...string) (f *os.File, err error) {
-	for _, path := range paths {
-		f, err = os.Open(path)
-		if nil == err {
-			return f, nil
-		}
-	}
-	return nil, err
-}
-
-func fileExists(paths ...string) (path string, err error) {
-	for _, path := range paths {
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
-		} else if !errors.Is(err, fs.ErrNotExist) {
-			return "", err
-		}
-	}
-	return "", fs.ErrNotExist
-}
-
-func removeExt(path string) string {
-	return path[:len(path)-len(filepath.Ext(path))]
-}
-
-func (s *Serve) serveError(fi fs.FileInfo, err error) (fs.File, error) {
-	pre := fmt.Sprintf(`<pre>%s</pre>`, err.Error())
-	html := []byte(fmt.Sprintf(htmlPage, pre+"\n"+liveReloadScript))
-	// Create a buffered file
-	bf := &virt.File{
-		Path:    "error",
-		Data:    html,
-		Mode:    fi.Mode(),
-		ModTime: fi.ModTime(),
-	}
-	return virt.Open(bf), nil
-}
-
-var clientCode = `
-<script type="module">
-	import { render as preactRender, h, hydrate } from 'https://cdn.jsdelivr.net/npm/preact@10.15.1/+esm'
-	import Proxy from 'https://esm.run/internal/proxy'
-	import Component from %q
-
-	export function render(Component, target, props = {}) {
-		const proxy = Proxy(props)
-		const component = Component(h, proxy)
-		hydrate(h(component, proxy, []), target)
-		window.requestAnimationFrame(() => {
-			props.subscribe(() => {
-				preactRender(h(component, props, []), target)
-			})
-		})
-	}
-
-	render(Component, document.querySelector('main'))
-</script>
-`
-
-func (s *Serve) openClient(name string) (fs.File, error) {
-	f, err := openFile(
-		filepath.Join(s.Dir, name),
-		filepath.Join(s.Dir, removeExt(name)+".svelte"),
-		filepath.Join(s.Dir, removeExt(name)+".html"),
-		filepath.Join(s.Dir, removeExt(name)+".duo"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("error opening %s: %w", name, err)
-	}
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("error stating %s: %w", name, err)
-	}
-	// If we detect HTML, inject the live reload script
-	code, err := io.ReadAll(f)
-	if err != nil {
-		return nil, err
-	}
-	// Close the existing file because we don't need it anymore
-	if err := f.Close(); err != nil {
-		return nil, err
-	}
-	if filepath.Ext(f.Name()) == ".js" {
-		bf := &virt.File{
-			Path:    name,
-			Data:    []byte(code),
-			Mode:    fi.Mode(),
-			ModTime: fi.ModTime(),
-		}
-		return virt.Open(bf), nil
-	}
-	jsCode, err := duo.Generate(name, code)
-	if err != nil {
-		return nil, fmt.Errorf("error generating %s: %w", name, err)
-	}
-	bf := &virt.File{
-		Path:    name,
-		Data:    []byte(jsCode),
-		Mode:    fi.Mode(),
-		ModTime: fi.ModTime(),
-	}
-	return virt.Open(bf), nil
-}
-
-type fileServer struct {
-	Dir string
-}
-
-func (f *fileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	urlPath := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
-	ext := filepath.Ext(urlPath)
-	if ext == ".js" {
-		f.serveClient(w, r, urlPath)
-	} else if isView(urlPath) {
-		f.serveView(w, r, urlPath)
-	} else {
-		f.serveStatic(w, r, urlPath)
-	}
-	// file, err := f.fs.Open(filePath)
-	// fmt.Println("got url", urlPath)
-	// file, err := f.fs.Open(urlPath)
-	// if err != nil {
-	// 	if errors.Is(err, fs.ErrNotExist) {
-	// 		http.Error(w, err.Error(), http.StatusNotFound)
-	// 		return
-	// 	}
-	// 	http.Error(w, err.Error(), http.StatusInternalServerError)
-	// }
-	// defer file.Close()
-	// fi, err := file.Stat()
-	// if err != nil {
-	// 	http.Error(w, err.Error(), http.StatusInternalServerError)
-	// 	return
-	// }
-	// if fi.IsDir() {
-	// 	file.Close()
-	// 	file, err = f.fs.Open(path.Join(urlPath, "index.html"))
-	// 	if err != nil {
-	// 		if errors.Is(err, fs.ErrNotExist) {
-	// 			http.Error(w, err.Error(), http.StatusNotFound)
-	// 			return
-	// 		}
-	// 		http.Error(w, err.Error(), http.StatusInternalServerError)
-	// 		return
-	// 	}
-	// }
-	// fmt.Println("got file", file)
-	// if
-	// fmt.Println("serving", urlPath, path.Clean(urlPath))
-	// if !strings.HasPrefix(upath, "/") {
-	// 	upath = "/" + upath
-	// 	r.URL.Path = upath
-	// }
-	// code, err := f.fs.Open(path.Clean(upath))
-	// if err != nil {
-	// 	http.Error(w, err.Error(), http.StatusNotFound)
-	// 	return
-	// }
-	// // serveFile(w, r, f.root, path.Clean(upath), true)
-	// http.FileServer(f.fs).ServeHTTP(w, r)
-}
-
-func (f *fileServer) serveView(w http.ResponseWriter, r *http.Request, name string) {
-	stat, err := os.Stat(filepath.Join(f.Dir, name))
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if stat.IsDir() {
-		name = path.Join(name, "index.html")
-	}
-	extless := filepath.Join(f.Dir, removeExt(name))
-	filePath, err := fileExists(
-		extless+".svelte",
-		extless+".html",
-		extless+".duo",
-	)
-	if err != nil {
-		f.serveError(w, r, err)
-		return
-	}
-	template := duo.New(duo.Input{})
-	buffer := new(bytes.Buffer)
-	props := map[string]any{}
-	values := r.URL.Query()
-	for key := range values {
-		props[key] = values.Get(key)
-	}
-	if err := template.Render(buffer, filePath, props); err != nil {
-		f.serveError(w, r, err)
-		return
-	}
-	html := buffer.Bytes()
-	// Inject the live reload script
-	if bytes.Contains(html, []byte(`<html>`)) {
-		html = append(html, []byte(liveReloadScript)...)
-		html = append(html, []byte(fmt.Sprintf(clientCode, "/"+removeExt(name)+".js"))...)
-	} else {
-		client := fmt.Sprintf(clientCode, "/"+removeExt(name)+".js")
-		body := fmt.Sprintf("%s\n%s\n%s", string(html), liveReloadScript, client)
-		html = []byte(fmt.Sprintf(htmlPage, body))
-	}
-	w.Header().Set("Content-Type", "text/html")
-	w.Write(html)
-}
-
-func (f *fileServer) serveClient(w http.ResponseWriter, r *http.Request, name string) {
-	extless := filepath.Join(f.Dir, removeExt(name))
-	filePath, err := fileExists(
-		extless+".js",
-		extless+".svelte",
-		extless+".html",
-		extless+".duo",
-	)
-	if err != nil {
-		f.serveClientError(w, r, err)
-		return
-	}
-	code, err := os.ReadFile(filePath)
-	if err != nil {
-		f.serveClientError(w, r, err)
-		return
-	}
-	if filepath.Ext(filePath) == ".js" {
-		w.Header().Set("Content-Type", "text/javascript")
-		w.Write(code)
-		return
-	}
-	jsCode, err := duo.Generate(name, code)
-	if err != nil {
-		f.serveClientError(w, r, err)
-		return
-	}
-	w.Header().Set("Content-Type", "text/javascript")
-	w.Write([]byte(jsCode))
-}
-
-func (f *fileServer) serveStatic(w http.ResponseWriter, r *http.Request, name string) {
-	http.ServeFile(w, r, filepath.Join(f.Dir, name))
-}
-
-func (f *fileServer) serveError(w http.ResponseWriter, _ *http.Request, err error) {
-	pre := fmt.Sprintf(`<pre>%s</pre>`, err.Error())
-	html := []byte(fmt.Sprintf(htmlPage, pre+"\n"+liveReloadScript))
-	w.Header().Set("Content-Type", "text/html")
-	w.Write(html)
-}
-
-func (f *fileServer) serveClientError(w http.ResponseWriter, _ *http.Request, err error) {
-	script := fmt.Sprintf(`console.error(%q)`, err.Error())
-	w.Header().Set("Content-Type", "text/javascript")
-	w.Write([]byte(script))
-}
-
-func (s *Serve) Open(name string) (fs.File, error) {
-	if filepath.Ext(name) == ".js" {
-		return s.openClient(name)
-	} else if !isView(name) {
-		return os.Open(filepath.Join(s.Dir, name))
-	}
-	var f *os.File
-	if filepath.Base(name) == "index.html" {
-		file, err := openFile(
-			filepath.Join(s.Dir, removeExt(name)+".svelte"),
-			filepath.Join(s.Dir, removeExt(name)+".html"),
-			filepath.Join(s.Dir, removeExt(name)+".duo"),
-		)
-		if err != nil {
-			return nil, err
-		}
-		f = file
-	}
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	// Skip directories
-	if fi.IsDir() {
-		return f, nil
-	}
-	defer f.Close()
-	// Close the existing file because we don't need it anymore
-	if err := f.Close(); err != nil {
-		return nil, err
-	}
-	template := duo.New(duo.Input{})
-	buffer := new(bytes.Buffer)
-	if err := template.Render(buffer, name, map[string]interface{}{
-		"greeting": "hello",
-	}); err != nil {
-		return s.serveError(fi, fmt.Errorf("error rendering %s: %w", name, err))
-	}
-	html := buffer.Bytes()
-	// Inject the live reload script
-	if bytes.Contains(html, []byte(`<html>`)) {
-		html = append(html, []byte(liveReloadScript)...)
-		html = append(html, []byte(fmt.Sprintf(clientCode, "/"+removeExt(name)+".js"))...)
-	} else {
-		client := fmt.Sprintf(clientCode, "/"+removeExt(name)+".js")
-		body := fmt.Sprintf("%s\n%s\n%s", string(html), liveReloadScript, client)
-		html = []byte(fmt.Sprintf(htmlPage, body))
-	}
-	// Create a buffered file
-	bf := &virt.File{
-		Path:    name,
-		Data:    html,
-		Mode:    fi.Mode(),
-		ModTime: fi.ModTime(),
-	}
-	return virt.Open(bf), nil
 }
 
 func (s *Serve) watch(ctx context.Context, ps pubsub.Publisher) func() error {
@@ -473,6 +135,10 @@ func (s *Serve) watch(ctx context.Context, ps pubsub.Publisher) func() error {
 			return nil
 		})
 	}
+}
+
+func isHTML(contentType string) bool {
+	return strings.Contains(contentType, "text/html")
 }
 
 // Find the next available port starting at 3000

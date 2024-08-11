@@ -1,6 +1,8 @@
 package esbuild
 
 import (
+	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/evanw/esbuild/pkg/api"
@@ -25,14 +27,22 @@ var (
 )
 
 func BuildOne(options BuildOptions) (File, error) {
-	result := api.Build(options)
-	if len(result.Errors) > 0 {
-		return File{}, &Error{result.Errors}
+	files, err := Build(options)
+	if err != nil {
+		return File{}, err
 	}
-	return result.OutputFiles[0], nil
+	if len(files) != 1 {
+		return File{}, fmt.Errorf("esbuild: expected exactly one output file, got %d", len(files))
+	}
+	return files[0], nil
 }
 
 func Build(options BuildOptions) ([]File, error) {
+	absDir, err := filepath.Abs(options.AbsWorkingDir)
+	if err != nil {
+		return nil, err
+	}
+	options.AbsWorkingDir = absDir
 	result := api.Build(options)
 	if len(result.Errors) > 0 {
 		return nil, &Error{result.Errors}
