@@ -58,23 +58,16 @@ func TestHelloWorld(t *testing.T) {
 		Connection: close
 		Content-Type: text/html; charset=utf-8
 
-		<html><head></head><body><main id="svelte"><h1>hello, world!</h1></main><script type="module" src="/index.svelte.js"></script></body></html>
+		<html><head></head><body><main id="svelte"><h1>hello, world!</h1></main><script type="module" src="/index.svelte.js"></script><script id="props" type="text/template">{}</script></body></html>
 	`)
 
 	req = httptest.NewRequest("GET", "/index.svelte.js", nil)
-	// contains(t, handler, req,
-	// 	`HTTP/1.1 200 OK`,
-	// 	`Content-Type: application/javascript`,
-	// 	`// http-url:https://esm.run/svelte@next`,
-	// 	`return h2("h1", {}, ["hello, world!"]);`,
-	// 	`target: document.getElementById("svelte"),`,
-	// 	`props: JSON.parse(document.getElementById("svelte.props").textContent)`,
-	// )
 	contains(t, handler, req,
 		`HTTP/1.1 200 OK`,
 		`Content-Type: application/javascript`,
-		`// http-url:https://esm.run/preact`,
-		`("h1", {}, ["hello, world!"]);`,
-		`document.querySelector("main")`,
+		`// http-url:https://esm.run/svelte@next`,
+		`return h2("h1", {}, ["hello, world!"]);`,
+		`target: document.getElementById("svelte"),`,
+		`document.getElementById("props")?.textContent || "{}"`,
 	)
 }

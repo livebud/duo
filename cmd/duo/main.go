@@ -102,7 +102,8 @@ var favicon = []byte{
 const liveReloadScript = `
 <script>
 var es = new EventSource('/.live');
-es.onmessage = function(e) { window.location.reload(); }
+es.addEventListener('message', function(e) { window.location.reload(); });
+window.addEventListener("beforeunload", function () { es && es.close(); });
 </script>
 `
 

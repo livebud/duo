@@ -2,6 +2,7 @@ package static
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -146,6 +147,10 @@ type Page struct {
 
 func (s *Server) Render(w http.ResponseWriter, page *Page, props map[string]interface{}) error {
 	children := new(bytes.Buffer)
+	jsonProps, err := json.Marshal(props)
+	if err != nil {
+		return err
+	}
 	if err := s.SSR.Evaluate(children, page.Content.Path, page.Content.Code, props); err != nil {
 		return s.SSR.Evaluate(w, page.Error.Path, page.Error.Code, props)
 	}
@@ -157,7 +162,7 @@ func (s *Server) Render(w http.ResponseWriter, page *Page, props map[string]inte
 		}
 	}
 	props["children"] = children.String()
-	props["script"] = fmt.Sprintf(`<script type="module" src=%q></script>`, s.ClientPath(page.Content.Path))
+	props["script"] = fmt.Sprintf(`<script type="module" src=%q></script><script id="props" type="text/template">%s</script>`, s.ClientPath(page.Content.Path), string(jsonProps))
 	children = new(bytes.Buffer)
 	if err := s.SSR.Evaluate(children, page.Layout.Path, page.Layout.Code, props); err != nil {
 		return err
@@ -172,29 +177,12 @@ func (s *Server) Render(w http.ResponseWriter, page *Page, props map[string]inte
 const entryCode = `
 	import { hydrate } from "https://esm.run/svelte@next";
 	import Content from "./%[1]s";
+	window.prerenderReady = true
+	const props = document.getElementById("props")?.textContent || "{}";
 	hydrate(Content, {
 		target: document.getElementById("svelte"),
-		props: JSON.parse(document.getElementById("svelte.props").textContent),
+		props: JSON.parse(props),
 	});
-`
-
-var clientCode = `
-import { render as preactRender, h, hydrate } from 'https://esm.run/preact'
-import Proxy from 'https://esm.run/internal/proxy'
-import Component from "./%[1]s";
-
-export function render(Component, target, props = {}) {
-		const proxy = Proxy(props)
-		const component = Component(h, proxy)
-		hydrate(h(component, proxy, []), target)
-		window.requestAnimationFrame(() => {
-				props.subscribe(() => {
-						preactRender(h(component, props, []), target)
-				})
-		})
-}
-
-render(Component, document.querySelector('main'))
 `
 
 func (s *Server) serveJS(w http.ResponseWriter, urlPath string) {
@@ -213,8 +201,7 @@ func (s *Server) serveJS(w http.ResponseWriter, urlPath string) {
 			esbuild.Svelte(s.Fsys),
 			esbuild.Virtual(urlPath, func(args api.OnLoadArgs) (api.OnLoadResult, error) {
 				componentPath := strings.TrimSuffix(urlPath, ".js")
-				contents := fmt.Sprintf(clientCode, componentPath)
-				fmt.Println(string(contents))
+				contents := fmt.Sprintf(entryCode, componentPath)
 				return api.OnLoadResult{
 					Contents:   &contents,
 					ResolveDir: s.Dir,
@@ -226,7 +213,6 @@ func (s *Server) serveJS(w http.ResponseWriter, urlPath string) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
 	w.Header().Set("Content-Type", "application/javascript")
 	w.Write(file.Contents)
 }
