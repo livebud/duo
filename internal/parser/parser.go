@@ -700,7 +700,7 @@ func (p *Parser) parseScript() (*ast.Script, error) {
 		return nil, err
 	}
 	// Parse the program
-	program, err := js.ParseScriptTS(jsCode)
+	program, err := js.ParseTS(jsCode)
 	if err != nil {
 		return nil, err
 	}

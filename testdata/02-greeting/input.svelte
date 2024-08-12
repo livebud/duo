@@ -1,5 +1,5 @@
 <script>
-  export let greeting = "hello"
+  let greeting = $state("hello")
   setInterval(() => {
     greeting += "o"
   }, 1000)

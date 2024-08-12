@@ -1,0 +1,19 @@
+{
+  "name": "duo",
+  "version": "1.0.0",
+  "description": "Reactive templating language for Go. Still early days.",
+  "main": "index.js",
+  "type": "module",
+  "directories": {
+    "example": "example"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "svelte": "5.0.0-next.216"
+  }
+}

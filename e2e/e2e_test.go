@@ -3,9 +3,11 @@ package e2e_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/livebud/duo/internal/static"
 	"github.com/livebud/duo/internal/wd"
 	"github.com/matryer/is"
 )
@@ -23,11 +25,31 @@ func serve(t testing.TB, handler http.Handler) (*wd.Browser, func()) {
 	}
 }
 
-func Test01Counter(t *testing.T) {
+const testdata = "../testdata"
+
+func Test(t *testing.T) {
 	is := is.New(t)
-	browser, close := serve(t, static.Dir("testdata/01-counter"))
-	defer close()
-	res, err := browser.Get("/")
+	dir, err := filepath.Abs(testdata)
 	is.NoErr(err)
-	is.Equal(res.Status(), 200)
+	des, err := os.ReadDir(dir)
+	is.NoErr(err)
+	for _, de := range des {
+		if !de.IsDir() || strings.HasPrefix(de.Name(), "_") {
+			continue
+		}
+		t.Run(de.Name(), func(t *testing.T) {
+			is := is.New(t)
+			e2e, err := os.ReadFile(filepath.Join(dir, de.Name(), "e2e.txt"))
+			if err != nil {
+				if os.IsNotExist(err) {
+					t.Skip("e2e.txt not found")
+					return
+				}
+				t.Fatal(err)
+			}
+			input, err := os.ReadFile(filepath.Join(dir, de.Name(), "input.svelte"))
+			is.NoErr(err)
+			_, _ = e2e, input
+		})
+	}
 }

@@ -65,6 +65,21 @@ func (b *Browser) Get(path string) (*Response, error) {
 	return &Response{http.StatusOK, bytes.NewBufferString(html)}, nil
 }
 
+func (b *Browser) GetHtml(path string, selector ...string) (string, error) {
+	res, err := b.Get(path)
+	if err != nil {
+		return "", err
+	}
+	if len(selector) == 0 {
+		return res.body.String(), nil
+	}
+	sel, err := res.Find(strings.Join(selector, " "))
+	if err != nil {
+		return "", err
+	}
+	return sel.Html()
+}
+
 func (b *Browser) Click(selector string) error {
 	element, err := b.wd.FindElement(selenium.ByCSSSelector, selector)
 	if err != nil {

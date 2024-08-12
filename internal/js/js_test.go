@@ -16,7 +16,7 @@ func equalJS(t *testing.T, path, input, expected string) {
 	}
 	t.Run(path, func(t *testing.T) {
 		t.Helper()
-		ast, err := js.ParseScriptJS(input)
+		ast, err := js.Parse(input)
 		if err != nil {
 			diff.TestString(t, err.Error(), expected)
 			return
@@ -38,12 +38,12 @@ func TestSampleJS(t *testing.T) {
 }
 
 func TestParse(t *testing.T) {
-	ast, err := js.ParseScriptJS("export let props: Props = []")
+	ast, err := js.Parse("export let props: Props = []")
 	if err != nil {
 		t.Fatal(err)
 	}
 	actual := js.Print(ast)
-	ast2, err := js.ParseScriptTS("export let props: Props = []")
+	ast2, err := js.ParseTS("export let props: Props = []")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,13 +60,13 @@ func TestParse(t *testing.T) {
 func BenchmarkParseJS(b *testing.B) {
 	// run the Fib function b.N times
 	for n := 0; n < b.N; n++ {
-		js.ParseScriptJS("export let props: Props = []")
+		js.Parse("export let props: Props = []")
 	}
 }
 
 func BenchmarkParseTS(b *testing.B) {
 	// run the Fib function b.N times
 	for n := 0; n < b.N; n++ {
-		js.ParseScriptTS("export let props: Props = []")
+		js.ParseTS("export let props: Props = []")
 	}
 }

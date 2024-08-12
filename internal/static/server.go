@@ -177,12 +177,12 @@ func (s *Server) Render(w http.ResponseWriter, page *Page, props map[string]inte
 const entryCode = `
 	import { hydrate } from "https://esm.run/svelte@next";
 	import Content from "./%[1]s";
-	window.prerenderReady = true
 	const props = document.getElementById("props")?.textContent || "{}";
 	hydrate(Content, {
 		target: document.getElementById("svelte"),
 		props: JSON.parse(props),
 	});
+	window.prerenderReady = true
 `
 
 func (s *Server) serveJS(w http.ResponseWriter, urlPath string) {

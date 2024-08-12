@@ -91,7 +91,7 @@ func esbuildInternalParse(script string) (string, error) {
 }
 
 // Parse a script
-func ParseScriptTS(script string) (*js.AST, error) {
+func ParseTS(script string) (*js.AST, error) {
 	// We use esbuild to parse the JavaScript because it supports Typescript
 	// obviously, this is a bit of a hack, but it works for now
 	result := esbuild.Transform(script, esbuild.TransformOptions{
@@ -115,7 +115,8 @@ func ParseScriptTS(script string) (*js.AST, error) {
 }
 
 // Parse a script
-func ParseScriptJS(script string) (*js.AST, error) {
+func Parse(script string) (*js.AST, error) {
+	// TODO: remove, this is redundant
 	code, err := esbuildInternalParse(script)
 	if err != nil {
 		return nil, err
