@@ -29,6 +29,7 @@ type (
 	BindingElement = js.BindingElement
 	IBinding       = js.IBinding
 	BinaryExpr     = js.BinaryExpr
+	IfStmt         = js.IfStmt
 	Var            = js.Var
 	CondExpr       = js.CondExpr
 	ArrowFunc      = js.ArrowFunc
@@ -48,9 +49,12 @@ type (
 	DotExpr        = js.DotExpr
 	Params         = js.Params
 	Scope          = js.Scope
+	INode          = js.INode
+	IVisitor       = js.IVisitor
 )
 
 var (
+	Walk            = js.Walk
 	VarToken        = js.VarToken
 	LetToken        = js.LetToken
 	StringToken     = js.StringToken

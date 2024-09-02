@@ -96,6 +96,10 @@ func (s *Scope) New() *Scope {
 	}
 }
 
+func (s *Scope) Parent() *Scope {
+	return s.parent
+}
+
 func (s *Scope) Clone() *Scope {
 	var parent *Scope
 	if s.parent != nil {

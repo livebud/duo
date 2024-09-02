@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"path"
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/livebud/duo/internal/ast"
 	"github.com/livebud/duo/internal/parser"
@@ -47,6 +49,7 @@ func (e *Renderer) Evaluate(w io.Writer, path string, code []byte, v interface{}
 		path:     path,
 		scope:    doc.Scope,
 		resolver: e.Resolver,
+		cache:    map[string]*ast.Document{},
 	}
 	if err := evaluator.evaluateDocument(&ioWriter{w}, scope, doc); err != nil {
 		return err
@@ -67,7 +70,7 @@ func toScope(value reflect.Value) (*scope, error) {
 		}
 		return scope, nil
 	default:
-		return nil, fmt.Errorf("unexpected scope type %s", value.Kind().String())
+		return nil, fmt.Errorf("ssr: unexpected scope type %s", value.Kind().String())
 	}
 }
 
@@ -100,6 +103,7 @@ type evaluator struct {
 	path     string
 	scope    *outscope.Scope
 	resolver resolver.Interface
+	cache    map[string]*ast.Document
 }
 
 type ioWriter struct {
@@ -164,7 +168,7 @@ func (e *evaluator) evaluateFragment(w writer, sc *scope, node ast.Fragment) err
 	case *ast.Slot:
 		return e.evaluateSlot(w, sc, n)
 	default:
-		return fmt.Errorf("unknown fragment %T", n)
+		return fmt.Errorf("ssr: unknown fragment %T", n)
 	}
 }
 
@@ -214,7 +218,7 @@ func (e *evaluator) evaluateAttribute(w writer, sc *scope, node ast.Attribute) e
 	case *ast.AttributeShorthand:
 		return e.evaluateAttributeShorthand(w, sc, n)
 	default:
-		return fmt.Errorf("unknown attribute %T", n)
+		return fmt.Errorf("ssr: unknown attribute %T", n)
 	}
 }
 
@@ -308,7 +312,7 @@ func (e *evaluator) evaluateValue(w writer, sc *scope, node ast.Value) error {
 	case *ast.Mustache:
 		return e.evaluateMustache(w, sc, n)
 	default:
-		return fmt.Errorf("unknown attribute value %T", n)
+		return fmt.Errorf("ssr: unknown attribute value %T", n)
 	}
 }
 
@@ -340,8 +344,11 @@ func writeValue(w writer, value reflect.Value) error {
 	case int:
 		w.WriteString(strconv.Itoa(value))
 		return nil
+	case time.Time:
+		w.WriteString(value.Format(time.RFC3339))
+		return nil
 	default:
-		return fmt.Errorf("unexpected value %T", value)
+		return fmt.Errorf("ssr: unexpected value %T", value)
 	}
 }
 
@@ -358,7 +365,7 @@ func valueToString(value reflect.Value) (string, error) {
 	case int:
 		return strconv.Itoa(value), nil
 	default:
-		return "", fmt.Errorf("unexpected value %T", value)
+		return "", fmt.Errorf("ssr: unexpected value %T", value)
 	}
 }
 
@@ -380,7 +387,7 @@ func evaluateAttribute(sc *scope, node ast.Attribute) (reflect.Value, error) {
 		}
 		return value, nil
 	default:
-		return reflect.Value{}, fmt.Errorf("unknown attribute %T", a)
+		return reflect.Value{}, fmt.Errorf("ssr: unknown attribute %T", a)
 	}
 }
 
@@ -412,7 +419,7 @@ func evaluateValue(scope *scope, node ast.Value) (reflect.Value, error) {
 	case *ast.Mustache:
 		return evaluateExpr(scope, n.Expr)
 	default:
-		return reflect.Value{}, fmt.Errorf("unknown attribute value %T", n)
+		return reflect.Value{}, fmt.Errorf("ssr: unknown attribute value %T", n)
 	}
 }
 
@@ -426,8 +433,14 @@ func evaluateExpr(scope *scope, node js.IExpr) (reflect.Value, error) {
 		return evaluateBinaryExpr(scope, n)
 	case *js.CondExpr:
 		return evaluateCondExpr(scope, n)
+	case *js.DotExpr:
+		return evaluateDotExpr(scope, n)
+	case *js.TemplateExpr:
+		return evaluateTemplateExpr(scope, n)
+	case *js.CallExpr:
+		return evaluateCallExpr(scope, n)
 	default:
-		return reflect.Value{}, fmt.Errorf("unknown expression %T", n)
+		return reflect.Value{}, fmt.Errorf("ssr: unknown expression %T", n)
 	}
 }
 
@@ -453,7 +466,7 @@ func evaluateLiteralExpr(scope *scope, node *js.LiteralExpr) (reflect.Value, err
 	case js.FalseToken:
 		return reflect.ValueOf(false), nil
 	default:
-		return reflect.Value{}, fmt.Errorf("unknown literal expression %s", node.TokenType.String())
+		return reflect.Value{}, fmt.Errorf("ssr: unknown literal expression %s", node.TokenType.String())
 	}
 }
 
@@ -466,7 +479,7 @@ func evaluateVar(scope *scope, node *js.Var) (reflect.Value, error) {
 			TokenType: js.IdentifierToken,
 		})
 	default:
-		return reflect.Value{}, fmt.Errorf("unknown decl %s", node.Decl.String())
+		return reflect.Value{}, fmt.Errorf("ssr: unknown decl %s", node.Decl.String())
 	}
 }
 
@@ -495,7 +508,7 @@ func evaluateBinaryExpr(scope *scope, node *js.BinaryExpr) (reflect.Value, error
 	case js.OrToken:
 		return evaluateOr(scope, left, right)
 	default:
-		return reflect.Value{}, fmt.Errorf("unknown binary expression %s", node.Op.String())
+		return reflect.Value{}, fmt.Errorf("ssr: unknown binary expression %s", node.Op.String())
 	}
 }
 
@@ -519,6 +532,48 @@ func evaluateCondExpr(scope *scope, node *js.CondExpr) (reflect.Value, error) {
 	return evaluateExpr(scope, node.Y)
 }
 
+func evaluateDotExpr(scope *scope, node *js.DotExpr) (reflect.Value, error) {
+	// x.y
+	x, err := evaluateExpr(scope, node.X)
+	if err != nil {
+		return reflect.Value{}, err
+	}
+	if x.Kind() == reflect.Pointer {
+		x = x.Elem()
+	}
+	switch x.Kind() {
+	case reflect.Struct:
+		value := x.FieldByName(node.Y.String())
+		return value, nil
+	// case reflect.Map:
+	default:
+		return reflect.Value{}, fmt.Errorf("ssr: unexpected member %s type: %s", x, x.Kind().String())
+	}
+}
+
+func evaluateTemplateExpr(scope *scope, node *js.TemplateExpr) (reflect.Value, error) {
+	str := new(strings.Builder)
+	for _, part := range node.List {
+		left := strings.TrimSuffix(strings.TrimLeft(string(part.Value), "`"), "${")
+		str.WriteString(left)
+		expr, err := evaluateExpr(scope, part.Expr)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		if err := writeValue(str, expr); err != nil {
+			return reflect.Value{}, err
+		}
+	}
+	str.WriteString(strings.TrimRight(string(node.Tail), "}`"))
+	fmt.Println(str.String())
+	return reflect.ValueOf(str.String()), nil
+}
+
+func evaluateCallExpr(scope *scope, node *js.CallExpr) (reflect.Value, error) {
+	// TODO: handle function calls
+	return reflect.Value{}, fmt.Errorf("ssr: call expression not implemented")
+}
+
 func evaluateAdd(_ *scope, left, right reflect.Value) (reflect.Value, error) {
 	switch left.Kind() {
 	case reflect.String:
@@ -526,17 +581,17 @@ func evaluateAdd(_ *scope, left, right reflect.Value) (reflect.Value, error) {
 		case reflect.String:
 			return reflect.ValueOf(left.String() + right.String()), nil
 		default:
-			return reflect.Value{}, fmt.Errorf("unexpected right value %s", right.Kind().String())
+			return reflect.Value{}, fmt.Errorf("ssr: unexpected right value %s", right.Kind().String())
 		}
 	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int8, reflect.Int16:
 		switch right.Kind() {
 		case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int8, reflect.Int16:
 			return reflect.ValueOf(left.Int() + right.Int()), nil
 		default:
-			return reflect.Value{}, fmt.Errorf("unexpected right value %s", right.Kind().String())
+			return reflect.Value{}, fmt.Errorf("ssr: unexpected right value %s", right.Kind().String())
 		}
 	default:
-		return reflect.Value{}, fmt.Errorf("unexpected left value %s", left.String())
+		return reflect.Value{}, fmt.Errorf("ssr: unexpected left value %s", left.String())
 	}
 }
 
@@ -560,7 +615,7 @@ func evaluateOr(_ *scope, left, right reflect.Value) (reflect.Value, error) {
 	case reflect.Invalid:
 		return right, nil
 	default:
-		return reflect.Value{}, fmt.Errorf("unexpected left value %s", left.String())
+		return reflect.Value{}, fmt.Errorf("ssr: unexpected left value %s", left.String())
 	}
 }
 
@@ -612,7 +667,7 @@ func evaluateEqual(_ *scope, left, right reflect.Value) (reflect.Value, error) {
 			return reflect.ValueOf(false), nil
 		}
 	default:
-		return reflect.Value{}, fmt.Errorf("unexpected left value %s", left.Kind().String())
+		return reflect.Value{}, fmt.Errorf("ssr: unexpected left value %s", left.Kind().String())
 	}
 }
 
@@ -647,14 +702,14 @@ func evaluateStrictEqual(_ *scope, left, right reflect.Value) (reflect.Value, er
 			return reflect.ValueOf(false), nil
 		}
 	default:
-		return reflect.Value{}, fmt.Errorf("unexpected left value %s", left.Kind().String())
+		return reflect.Value{}, fmt.Errorf("ssr: unexpected left value %s", left.Kind().String())
 	}
 }
 
 func evaluateIdentifier(scope *scope, node *js.LiteralExpr) (reflect.Value, error) {
 	value, ok := scope.Lookup(string(node.Data))
 	if !ok {
-		// return reflect.Value{}, fmt.Errorf("identifier %s not found", string(node.Data))
+		// return reflect.Value{}, fmt.Errorf("ssr: identifier %s not found", string(node.Data))
 		return reflect.Value{}, nil
 	}
 	return value, nil
@@ -711,7 +766,7 @@ func (e *evaluator) evaluateEachBlock(w writer, sc *scope, node *ast.EachBlock) 
 	// Convert the list to a slice
 	slice, ok := toSlice(list)
 	if !ok {
-		return fmt.Errorf("each must be a slice of values, but got %s", list.Kind())
+		return fmt.Errorf("ssr: each must be a slice of values, but got %s", list.Kind())
 	}
 	// Loop over the elements of the slice
 	// TODO: handle maps too
@@ -734,20 +789,26 @@ func (e *evaluator) evaluateEachBlock(w writer, sc *scope, node *ast.EachBlock) 
 func (e *evaluator) evaluateComponent(w writer, sc *scope, node *ast.Component) error {
 	symbol, ok := e.scope.LookupByName(node.Name)
 	if !ok {
-		return fmt.Errorf("component %s not found", node.Name)
+		return fmt.Errorf("ssr: component %s not found", node.Name)
 	} else if symbol.Import == nil {
-		return fmt.Errorf("component %s not imported", node.Name)
+		return fmt.Errorf("ssr: component %s not imported", node.Name)
 	}
-	file, err := e.resolver.Resolve(&resolver.Resolve{
-		From: e.path,
-		Path: symbol.Import.Path,
-	})
-	if err != nil {
-		return err
-	}
-	doc, err := parser.Parse(file.Path, string(file.Code))
-	if err != nil {
-		return err
+	cachePath := path.Join(path.Dir(e.path), symbol.Import.Path)
+	doc := e.cache[cachePath]
+	if e.cache[cachePath] == nil {
+		file, err := e.resolver.Resolve(&resolver.Resolve{
+			From: e.path,
+			Path: symbol.Import.Path,
+		})
+		if err != nil {
+			return err
+		}
+		d, err := parser.Parse(file.Path, string(file.Code))
+		if err != nil {
+			return err
+		}
+		e.cache[cachePath] = d
+		doc = d
 	}
 	// Build props from attributes
 	componentScope := newScope()
@@ -766,7 +827,7 @@ func (e *evaluator) evaluateComponent(w writer, sc *scope, node *ast.Component) 
 	for _, fragment := range node.Children {
 		switch n := fragment.(type) {
 		case *ast.Slot:
-			return fmt.Errorf("named slots not implemented yet")
+			return fmt.Errorf("ssr: named slots not implemented yet")
 		default:
 			if err := e.evaluateFragment(&componentScope.slot, sc, n); err != nil {
 				return err
@@ -779,7 +840,7 @@ func (e *evaluator) evaluateComponent(w writer, sc *scope, node *ast.Component) 
 
 func (e *evaluator) evaluateSlot(w writer, sc *scope, node *ast.Slot) error {
 	if node.Name != "" {
-		return fmt.Errorf("named slots not implemented yet")
+		return fmt.Errorf("ssr: named slots not implemented yet")
 	}
 	if sc.slot.Len() == 0 && len(node.Fallback) > 0 {
 		if err := e.evaluateFragments(&sc.slot, sc, node.Fallback...); err != nil {
